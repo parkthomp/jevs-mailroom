@@ -59,5 +59,15 @@ export interface SubmissionProgress {
   queuePosition?: number;
 }
 export interface BinPage { messages: PublicMessage[]; nextCursor: string | null; total: number }
-export type ServerEvent = { type: 'snapshot'; room: RoomSnapshot };
+export type Facing = 'up' | 'down' | 'left' | 'right';
+export const FACINGS: readonly Facing[] = ['up', 'down', 'left', 'right'];
+// How many outfits a visitor's character can wear (see client/pixels.tsx).
+export const LOOKS = 18;
+// A visitor's character standing in the room. Positions are feet, in room pixels, like Jev's.
+export interface Visitor { id: string; x: number; y: number; facing: Facing; look: number; moving: boolean }
+export type ServerEvent =
+  | { type: 'snapshot'; room: RoomSnapshot }
+  | { type: 'hello'; id: string } // Which of the visitors is you.
+  | { type: 'visitors'; visitors: Visitor[] };
+export type ClientEvent = { type: 'move' } & Omit<Visitor, 'id'>;
 export interface JevDecision { destination: Destination; reaction: string; reason?: string }

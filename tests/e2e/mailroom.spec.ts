@@ -1,4 +1,22 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+// The menu offers everything the room does without walking; these flows use it.
+async function write(page: Page, note: string) {
+  await page.getByRole('button', { name: 'MENU', exact: true }).click();
+  await page.getByRole('button', { name: 'Write a note' }).click();
+  await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(note);
+  await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
+}
+async function browse(page: Page, category: string) {
+  await page.getByRole('button', { name: 'MENU', exact: true }).click();
+  await page.getByRole('button', { name: new RegExp(`^Browse ${category}`) }).click();
+}
+// Holds an arrow key until the canvas reports your character where the check wants it.
+async function walk(page: Page, key: string, check: string) {
+  await page.keyboard.down(key);
+  await page.waitForFunction(`(({ playerX: x, playerY: y }) => (${check}))(Object.fromEntries(Object.entries(document.querySelector('canvas').dataset).map(([k, v]) => [k, Number(v)])))`, undefined, { timeout: 10000 });
+  await page.keyboard.up(key);
+}
 
 test('two visitors watch a note get filed and can browse its durable bin history', async ({ browser }) => {
   const author = await browser.newContext();
@@ -11,13 +29,14 @@ test('two visitors watch a note get filed and can browse its durable bin history
   try {
     await Promise.all([page.goto('/'), observer.goto('/')]);
     await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
-    await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(note);
-    await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
+    await write(page, note);
     await expect(page.getByText('Filed in Ideas', { exact: true })).toBeVisible({ timeout: 20000 });
+    // Each visitor sees the other's character walking around.
+    await expect(observer.locator('canvas')).toHaveAttribute('data-visitors', '1');
     await page.getByRole('button', { name: 'See your message' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
-    await observer.getByRole('button', { name: /^Browse Ideas/ }).click();
+    await browse(observer, 'Ideas');
     await expect(observer.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
     await observer.reload();
     await expect(observer.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
@@ -34,25 +53,25 @@ test('screened-out envelope gets tossed without exposing its contents to visitor
   // Reload to attach the observer before the room socket opens.
   await page.reload();
   const note = `[trash] PRIVATE_BROWSER_FIXTURE_${Date.now()}`;
-  await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(note);
-  await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
+  await write(page, note);
   await expect(page.getByText('Jev discarded your message', { exact: true })).toBeVisible({ timeout: 20000 });
   expect(publicFrames.join('')).not.toContain(note);
-  await expect(page.getByRole('textbox')).toHaveValue('');
-  await page.getByRole('button', { name: /^Browse Misc/ }).click();
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await browse(page, 'Misc');
   await expect(page.getByRole('dialog').getByText(note, { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /correct|recategorize/i })).toHaveCount(0);
 });
 
-test('mobile and reduced-motion visitors can open every bin without horizontal overflow', async ({ browser }) => {
+test('mobile and reduced-motion visitors get a touch pad and can open every bin without horizontal overflow', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
   const page = await context.newPage();
   try {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.getByRole('button', { name: 'Use', exact: true })).toBeVisible();
     for (const category of ['Compliments', 'Ideas', 'Complaints', 'Misc']) {
-      await page.getByRole('button', { name: new RegExp(`^Browse ${category}`) }).click();
+      await browse(page, category);
       await expect(page.getByRole('dialog').getByRole('heading', { name: category, exact: true })).toBeVisible();
       const box = await page.getByRole('dialog').boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0);
@@ -73,8 +92,7 @@ test('Jev sprints a note to the trash, then strolls off to mill about', async ({
   }
   type Leg = { kind: string; from: number; to: number; path: [number, number][]; carrying?: string };
   const sentAt = Date.now();
-  await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(`[trash] sprint fixture ${Date.now()}`);
-  await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
+  await write(page, `[trash] sprint fixture ${Date.now()}`);
   let legs: Leg[] = [];
   for (let i = 0; i < 100; i++) {
     const room = await (await request.get('/api/room')).json();
@@ -103,4 +121,30 @@ test('Jev sprints a note to the trash, then strolls off to mill about', async ({
   expect(stroll!.path[0]).toEqual([262, 122]);
   await at(stroll!.to + 200);
   expect(await jevX()).toBe(stroll!.path.at(-1)![0]);
+});
+
+test('visitors walk up to a bin to read it and to the incoming desk to write a note', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
+  // In through the door, round the left of Jev's desk, and up to the Ideas bin.
+  await walk(page, 'ArrowLeft', 'x <= 122');
+  await walk(page, 'ArrowUp', 'y <= 58');
+  await expect(page.getByRole('button', { name: 'Read Ideas' })).toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Ideas', exact: true })).toBeVisible();
+  // Your character stays put while a window is open.
+  const x = await page.locator('canvas').getAttribute('data-player-x');
+  await page.keyboard.down('ArrowRight'); await page.waitForTimeout(300); await page.keyboard.up('ArrowRight');
+  await expect(page.locator('canvas')).toHaveAttribute('data-player-x', x!);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // Back down past the rug and over to the incoming desk.
+  await walk(page, 'ArrowDown', 'y >= 132');
+  await walk(page, 'ArrowLeft', 'x <= 80');
+  await expect(page.getByRole('button', { name: 'Write a note' })).toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('textbox', { name: 'Your message to Jev' })).toBeFocused();
+  // Typing never walks your character around.
+  await page.keyboard.type('asdw');
+  await expect(page.getByRole('textbox', { name: 'Your message to Jev' })).toHaveValue('asdw');
 });

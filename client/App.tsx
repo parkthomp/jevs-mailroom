@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { BIN_META, CATEGORIES, type BinPage, type Category, type PublicMessage, type RoomSnapshot, type SubmissionProgress, type SubmissionReceipt } from '../shared/protocol';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { BIN_META, CATEGORIES, LOOKS, type BinPage, type Category, type Facing, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
 import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP } from './pixels';
-import RoomCanvas from './RoomCanvas';
+import type { Spot } from './player';
+import RoomCanvas, { type Move, type Pad } from './RoomCanvas';
 
-type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress };
-const STORAGE_KEY = 'jevs-mailroom-receipts-v1';
+type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress; seen?: boolean };
+// What's in the text box, and what clears it: walking off, stepping away from what you used, or a few seconds passing.
+type Talk = { speaker: 'JEV' | null; line: string; ends: 'walk' | 'leave' | 'time' };
+const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', WELCOME_KEY = 'jevs-mailroom-welcomed-v1';
 // 'failed' is not terminal: the worker keeps retrying it, so the receipt must keep polling.
 const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
 const countLabel = (n: number) => `${n} ${n === 1 ? 'message' : 'messages'}`;
+const JEV_IDLE = [
+  'Got a note for me? Leave it on the INCOMING desk and I’ll find it a home!',
+  'Every note gets a bin. Walk up to one to read what folks have sent.',
+  'Compliments, ideas, complaints, or misc. I sort them all!',
+];
+const PROMPTS: Record<Spot['kind'], string> = { bin: 'Read', incoming: 'Write a note', trash: 'Look in the trash', jev: 'Talk to Jev' };
+const promptFor = (spot: Spot) => spot.kind === 'bin' ? `Read ${BIN_META[spot.category].label}` : PROMPTS[spot.kind];
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -19,11 +29,34 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 function readReceipts(): SavedReceipt[] {
   try { const result: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); return Array.isArray(result) ? result.filter(item => typeof item.id === 'string' && typeof item.token === 'string').slice(0, 8) : []; } catch { return []; }
 }
+// Each browser keeps the same outfit between visits.
+function readLook(): number {
+  try {
+    const saved = Number(localStorage.getItem(LOOK_KEY));
+    if (Number.isInteger(saved) && saved >= 0 && saved < LOOKS && localStorage.getItem(LOOK_KEY) !== null) return saved;
+    const look = Math.floor(Math.random() * LOOKS);
+    localStorage.setItem(LOOK_KEY, String(look));
+    return look;
+  } catch { return Math.floor(Math.random() * LOOKS); }
+}
+function welcomed() {
+  try { return !!localStorage.getItem(WELCOME_KEY); } catch { return false; }
+}
 function EnvelopeIcon({ className = '' }: { className?: string }) {
   return <Sprite data={ENVELOPE} className={className} />;
 }
 function Arrow() {
   return <Sprite data={ARROW} size={2} />;
+}
+// Phones and tablets get an on-screen pad; so does anyone who touches the screen.
+function useTouch() {
+  const [touch, setTouch] = useState(() => window.matchMedia('(pointer: coarse)').matches);
+  useEffect(() => {
+    const touched = () => setTouch(true);
+    window.addEventListener('touchstart', touched, { once: true, passive: true });
+    return () => window.removeEventListener('touchstart', touched);
+  }, []);
+  return touch;
 }
 // Reveals a line letter by letter like a handheld text box; screen readers get the whole line at once.
 function useTypewriter(line: string, length: number) {
@@ -36,11 +69,11 @@ function useTypewriter(line: string, length: number) {
   }, [line, length]);
   return shown;
 }
-function Dialogue({ line }: { line: string }) {
-  const chars = Array.from(line), shown = useTypewriter(line, chars.length);
-  return <div className="dialogue" aria-live="polite">
-    <Sprite data={JEV_FACE} className="dialogue-face" />
-    <p><span className="speaker">JEV</span><span className="sr-only">{line}</span><span aria-hidden="true">{chars.slice(0, shown).join('')}<span className="unrevealed">{chars.slice(shown).join('')}</span></span></p>
+function Dialogue({ talk, onDismiss }: { talk: Talk; onDismiss: () => void }) {
+  const chars = Array.from(talk.line), shown = useTypewriter(talk.line, chars.length);
+  return <div className={`dialogue ${talk.speaker ? '' : 'narration'}`} aria-live="polite" onClick={onDismiss}>
+    {talk.speaker && <Sprite data={JEV_FACE} className="dialogue-face" />}
+    <p>{talk.speaker && <span className="speaker">{talk.speaker}</span>}<span className="sr-only">{talk.line}</span><span aria-hidden="true">{chars.slice(0, shown).join('')}<span className="unrevealed">{chars.slice(shown).join('')}</span></span></p>
     {shown >= chars.length && <Sprite data={DOWN} size={2} className="dialogue-more" />}
   </div>;
 }
@@ -49,8 +82,12 @@ function useRoom() {
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
+  const [selfId, setSelfId] = useState<string | null>(null);
+  // Characters move many times a second, so they skip React and go straight to the canvas.
+  const visitors = useRef(new Map<string, Visitor>());
+  const socket = useRef<WebSocket | undefined>(undefined);
   useEffect(() => {
-    let stopped = false, socket: WebSocket | undefined, reconnect: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false, reconnect: ReturnType<typeof setTimeout> | undefined;
     const accept = (snapshot: RoomSnapshot) => {
       if (stopped) return;
       setRoom(current => !current || snapshot.version >= current.version ? snapshot : current);
@@ -58,17 +95,46 @@ function useRoom() {
     };
     const refresh = () => request<RoomSnapshot>('/api/room').then(accept).catch(() => { if (!stopped) setError('The mailroom is reconnecting. Your saved messages are safe.'); });
     const connect = () => {
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
-      socket.onopen = () => { if (!stopped) { setConnected(true); void refresh(); } };
-      socket.onmessage = event => { try { const parsed = JSON.parse(event.data); if (parsed.type === 'snapshot' && parsed.room) accept(parsed.room); } catch { /* A later snapshot restores state. */ } };
-      socket.onclose = () => { if (!stopped) { setConnected(false); reconnect = setTimeout(connect, 2000); } };
-      socket.onerror = () => socket?.close();
+      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
+      socket.current = ws;
+      ws.onopen = () => { if (!stopped) { setConnected(true); void refresh(); } };
+      ws.onmessage = event => {
+        try {
+          const parsed = JSON.parse(event.data) as ServerEvent;
+          if (parsed.type === 'snapshot' && parsed.room) accept(parsed.room);
+          else if (parsed.type === 'hello') setSelfId(parsed.id);
+          else if (parsed.type === 'visitors' && Array.isArray(parsed.visitors)) visitors.current = new Map(parsed.visitors.map(visitor => [visitor.id, visitor]));
+        } catch { /* A later snapshot restores state. */ }
+      };
+      ws.onclose = () => { if (!stopped) { setConnected(false); setSelfId(null); visitors.current = new Map(); reconnect = setTimeout(connect, 2000); } };
+      ws.onerror = () => ws.close();
     };
     void refresh(); connect();
     const interval = setInterval(refresh, 10000);
-    return () => { stopped = true; clearInterval(interval); clearTimeout(reconnect); socket?.close(); };
+    return () => { stopped = true; clearInterval(interval); clearTimeout(reconnect); socket.current?.close(); };
   }, []);
-  return { room, connected, error };
+  const move = useCallback((next: Move) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'move', ...next })); }, []);
+  return { room, connected, error, selfId, visitors, move };
+}
+
+// Keeps keyboard focus inside a window, closes it on Escape, and hands focus back afterwards.
+function useDialog(panel: RefObject<HTMLElement | null>, first: RefObject<HTMLElement | null>, onClose: () => void) {
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    first.current?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'Tab') {
+        const nodes = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input, textarea:not(:disabled), [tabindex="0"]');
+        if (!nodes?.length) return;
+        const start = nodes[0], end = nodes[nodes.length - 1];
+        if (event.shiftKey && document.activeElement === start) { event.preventDefault(); end.focus(); }
+        else if (!event.shiftKey && document.activeElement === end) { event.preventDefault(); start.focus(); }
+      }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => { document.removeEventListener('keydown', keydown); previous?.focus(); };
+  }, [onClose]);
 }
 
 function Receipt({ receipt, openBin }: { receipt: SavedReceipt; openBin: (category: Category, id?: string) => void }) {
@@ -87,7 +153,7 @@ function Receipt({ receipt, openBin }: { receipt: SavedReceipt; openBin: (catego
   </div>;
 }
 
-function HistoryPanel({ category, highlight, room, onSelect, onClose }: { category: Category; highlight: string | null; room: RoomSnapshot | null; onSelect: (category: Category, id?: string) => void; onClose: () => void }) {
+function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose }: { category: Category; highlight: string | null; room: RoomSnapshot | null; onSelect: (category: Category, id?: string) => void; onClose: () => void; onCompose: () => void }) {
   const [messages, setMessages] = useState<PublicMessage[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +167,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose }: { catego
   const baseline = useRef<number | undefined>(undefined);
   const meta = BIN_META[category];
   const total = room?.counts[category] || 0;
+  useDialog(panel, closeButton, onClose);
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const page = await request<BinPage>(`/api/bins/${category}/messages`, { signal });
     let list = page.messages;
@@ -110,24 +177,6 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose }: { catego
     }
     setMessages(list); setCursor(page.nextCursor); setNewMessages(false);
   }, [category, highlight]);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    closeButton.current?.focus();
-    const oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'Tab') {
-        const nodes = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input, textarea, [tabindex="0"]');
-        if (!nodes?.length) return;
-        const first = nodes[0], last = nodes[nodes.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-      }
-    };
-    document.addEventListener('keydown', keydown);
-    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener('keydown', keydown); previous?.focus(); };
-  }, [onClose]);
   useEffect(() => {
     const controller = new AbortController();
     baseline.current = undefined; setLoading(true); setError(''); setMessages([]); scroll.current?.scrollTo(0, 0);
@@ -163,7 +212,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose }: { catego
       <div className="message-list" ref={scroll}>
         {error && <div className="inline-error" role="alert">{error} <button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div>}
         {loading && !messages.length && <div className="archive-empty"><span className="loading-dots">···</span><p>Opening the drawer…</p></div>}
-        {!loading && !messages.length && !error && <div className="archive-empty"><EnvelopeIcon /><h3>A little room for your thoughts.</h3><p>No messages here yet. Send Jev a note and give this bin its first story.</p><button className="text-button" onClick={onClose}>Write a note <Arrow /></button></div>}
+        {!loading && !messages.length && !error && <div className="archive-empty"><EnvelopeIcon /><h3>A little room for your thoughts.</h3><p>No messages here yet. Leave Jev a note at the incoming desk and give this bin its first story.</p><button className="text-button" onClick={onCompose}>Write a note <Arrow /></button></div>}
         {messages.map(message => <article key={message.id} className={`message-card ${message.id === highlight ? 'highlighted' : ''}`}>
           <div className="message-meta"><span>{message.id === highlight ? 'YOUR NOTE' : 'A NOTE FROM SOMEONE'}</span><time dateTime={new Date(message.deliveredAt).toISOString()}>{new Date(message.deliveredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
           <p className="message-body">{message.text}</p><div className="jev-reaction"><Sprite data={JEV_FACE} size={2} className="mini-face" /><span>{message.reaction}</span></div>
@@ -175,17 +224,97 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose }: { catego
   </div>;
 }
 
-export default function App() {
-  const { room, connected, error: roomError } = useRoom();
+// The incoming desk: write a note and leave it in the tray for Jev.
+function ComposePanel({ onClose, onSent }: { onClose: () => void; onSent: (receipt: SubmissionReceipt) => void }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState('');
+  const [error, setError] = useState('');
+  const submission = useRef<{ text: string; id: string } | null>(null);
+  const panel = useRef<HTMLElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  useDialog(panel, textarea, onClose);
+  const send = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!text.trim() || sending) return;
+    const clean = text.trim();
+    if (submission.current?.text !== clean) submission.current = { text: clean, id: crypto.randomUUID() };
+    setSending(true); setError('');
+    try {
+      const receipt = await request<SubmissionReceipt>('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean, clientSubmissionId: submission.current.id }) });
+      submission.current = null; onSent(receipt);
+    } catch (error) { setError((error as Error).message); setSending(false); }
+  };
+  return <div className="panel-backdrop centered" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="composer window" ref={panel} role="dialog" aria-modal="true" aria-labelledby="compose-title">
+      <div className="panel-top"><span className="eyebrow">THE INCOMING DESK</span><button className="icon-button" onClick={onClose} aria-label="Close the incoming desk"><Sprite data={CLOSE} size={2} /></button></div>
+      <h2 id="compose-title">Leave Jev a little note.</h2>
+      <form onSubmit={send}><label htmlFor="message" className="sr-only">Your message to Jev</label><div className="textarea-wrap"><textarea id="message" ref={textarea} value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void send(event); }} placeholder={'Dear Jev,\nI’ve been thinking…'} maxLength={280} rows={5} required disabled={sending} aria-describedby="public-note character-count" /><span id="character-count" className={text.length > 260 ? 'character-count near-limit' : 'character-count'}>{text.length}<span> / 280</span></span></div>
+        <button className="send-button" type="submit" disabled={!text.trim() || sending}>{sending ? 'Handing it to Jev…' : 'Send to Jev'}</button><p className="public-note" id="public-note"><Sprite data={EXCLAIM} size={2} /> Accepted notes are public. Leave out personal details.</p>{error && <p className="inline-error" role="alert">{error}</p>}
+      </form>
+    </section>
+  </div>;
+}
+
+// Everything the room offers, without walking: for keyboard and screen reader visitors, or anyone in a hurry.
+function MenuPanel({ room, touch, onClose, onCompose, onBin }: { room: RoomSnapshot | null; touch: boolean; onClose: () => void; onCompose: () => void; onBin: (category: Category) => void }) {
+  const panel = useRef<HTMLElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useDialog(panel, closeButton, onClose);
+  const total = CATEGORIES.reduce((sum, category) => sum + (room?.counts[category] || 0), 0);
+  return <div className="panel-backdrop centered" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="menu window" ref={panel} role="dialog" aria-modal="true" aria-labelledby="menu-title">
+      <div className="panel-top"><h2 id="menu-title" className="eyebrow">MENU</h2><button className="icon-button" ref={closeButton} onClick={onClose} aria-label="Close menu"><Sprite data={CLOSE} size={2} /></button></div>
+      <button className="menu-item menu-write" onClick={onCompose}><Sprite data={ARROW} size={2} className="menu-cursor" /><EnvelopeIcon /> Write a note</button>
+      <div className="menu-list" role="group" aria-label="Bins">{CATEGORIES.map(category => <button key={category} className="menu-item" onClick={() => onBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
+        <Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={BIN_ICONS[category]} size={3} /><span>{BIN_META[category].label}</span><span className="menu-count">{room?.counts[category] || 0}</span>
+      </button>)}</div>
+      <p className="menu-help">{touch ? 'Walk with the pad, or tap anywhere to walk there. Press A next to a bin to read it, or at the INCOMING desk to write a note.' : 'Walk with the arrow keys or WASD, or click anywhere to walk there. Press Space next to a bin to read it, or at the INCOMING desk to write a note.'}</p>
+      {room?.mode === 'demo' && <p className="demo-notice"><span>DEMO MODE</span> Jev is using local sorting rules.</p>}
+      <p className="menu-footer">{total} notes filed with care</p>
+    </section>
+  </div>;
+}
+
+// A handheld-style pad: slide your thumb around it to walk, and press A to use what's in front of you.
+function TouchPad({ pad, onUse }: { pad: RefObject<Pad>; onUse: () => void }) {
+  const [held, setHeld] = useState<Facing | null>(null);
+  const aim = (event: React.PointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect(), dx = event.clientX - bounds.left - bounds.width / 2, dy = event.clientY - bounds.top - bounds.height / 2;
+    const direction: Facing | null = Math.hypot(dx, dy) < bounds.width * .12 ? null : Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy > 0 ? 'down' : 'up';
+    pad.current?.held.clear();
+    if (direction) pad.current?.held.add(direction);
+    setHeld(direction);
+  };
+  const release = () => { pad.current?.held.clear(); setHeld(null); };
+  useEffect(() => release, []);
+  return <div className="touch-controls">
+    <div className="dpad" aria-hidden="true" onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); aim(event); }} onPointerMove={event => { if (event.buttons || event.pointerType === 'touch') { if (event.currentTarget.hasPointerCapture(event.pointerId)) aim(event); } }} onPointerUp={release} onPointerCancel={release} onContextMenu={event => event.preventDefault()}>
+      {(['up', 'right', 'down', 'left'] as Facing[]).map(direction => <span key={direction} className={`dpad-${direction} ${held === direction ? 'pressed' : ''}`} />)}
+      <span className="dpad-center" />
+    </div>
+    <button className="a-button" onPointerDown={event => { event.preventDefault(); onUse(); }} onClick={event => { if (event.detail === 0) onUse(); }} aria-label="Use">A</button>
+  </div>;
+}
+
+export default function App() {
+  const { room, connected, error: roomError, selfId, visitors, move } = useRoom();
   const [receipts, setReceipts] = useState<SavedReceipt[]>(readReceipts);
   const [selection, setSelection] = useState(() => { const params = new URLSearchParams(location.search); const value = params.get('bin'); return { category: isCategory(value) ? value : null, message: params.get('message') }; });
-  const submission = useRef<{ text: string; id: string } | null>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const total = CATEGORIES.reduce((sum, category) => sum + (room?.counts[category] || 0), 0);
+  const [overlay, setOverlay] = useState<'menu' | 'compose' | null>(null);
+  const [near, setNear] = useState<Spot | null>(null);
+  const [look] = useState(readLook);
+  const touch = useTouch();
+  const [talk, setTalk] = useState<Talk | null>(() => welcomed() ? null : { speaker: 'JEV', ends: 'walk', line: touch ? 'Welcome in! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.' : 'Welcome in! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.' });
+  useEffect(() => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* Private modes just see the welcome each time. */ } }, []);
+  useEffect(() => {
+    if (talk?.ends !== 'time') return;
+    const timer = setTimeout(() => setTalk(current => current === talk ? null : current), 7000);
+    return () => clearTimeout(timer);
+  }, [talk]);
+  const pad = useRef<Pad>({ held: new Set(), use: false });
+  const reacted = useRef(new Set<string>());
   const ownIds = receipts.map(receipt => receipt.id);
+  const latest = receipts[0], latestStatus = latest?.progress?.status || latest?.status;
+  const beacon = latest && latestStatus === 'delivered' && !latest.seen && latest.progress?.category ? latest.progress.category : null;
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts.slice(0, 8))); } catch { /* In private storage modes the current session still works. */ } }, [receipts]);
   useEffect(() => {
     let stopped = false;
@@ -201,57 +330,66 @@ export default function App() {
     return () => { stopped = true; clearInterval(timer); };
   // Progress updates must not restart the polling interval.
   }, [receipts.map(receipt => `${receipt.id}:${terminal.has(receipt.progress?.status || receipt.status)}`).join(',')]);
+  // When Jev files your own note, he tells you what he thought of it.
+  useEffect(() => {
+    const active = room?.active;
+    if (!active || !ownIds.includes(active.id) || reacted.current.has(active.id)) return;
+    reacted.current.add(active.id);
+    setTalk({ speaker: 'JEV', line: active.reaction, ends: 'time' });
+  }, [room?.active?.id, ownIds.join(',')]);
   useEffect(() => {
     const pop = () => { const params = new URLSearchParams(location.search); const category = params.get('bin'); setSelection({ category: isCategory(category) ? category : null, message: params.get('message') }); };
     window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);
   }, []);
   const openBin = useCallback((category: Category, message?: string) => {
     const url = new URL(location.href); url.searchParams.set('bin', category); if (message) url.searchParams.set('message', message); else url.searchParams.delete('message');
-    history.pushState({}, '', url); setSelection({ category, message: message || null });
+    history.pushState({}, '', url); setSelection({ category, message: message || null }); setOverlay(null); setTalk(null);
+    setReceipts(current => current.map((receipt, i) => i === 0 && receipt.progress?.category === category ? { ...receipt, seen: true } : receipt));
   }, []);
   const closeBin = useCallback(() => { const url = new URL(location.href); url.searchParams.delete('bin'); url.searchParams.delete('message'); history.pushState({}, '', url); setSelection({ category: null, message: null }); }, []);
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault(); if (!text.trim() || sending) return;
-    const clean = text.trim();
-    if (submission.current?.text !== clean) submission.current = { text: clean, id: crypto.randomUUID() };
-    setSending(true); setSendError('');
-    try {
-      const receipt = await request<SubmissionReceipt>('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean, clientSubmissionId: submission.current.id }) });
-      setReceipts(current => [receipt, ...current.filter(item => item.id !== receipt.id)].slice(0, 8)); setText(''); submission.current = null;
-    } catch (error) { setSendError((error as Error).message); } finally { setSending(false); }
-  };
-  const active = room?.active;
-  // The canvas interpolates exact server timing; this label remains deliberately simple.
-  const activity = active ? active.destination === 'trash' ? 'Jev is taking out the trash' : `Jev is sorting a little mail` : room?.queue.length ? 'A few notes are being checked' : 'Jev is ready for your next note';
-  return <div className="app-shell">
-    <header className="site-header"><h1 className="brand-heading"><a href="/" className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></a></h1><div className="header-right"><span className="room-live"><span className={`status-dot ${connected ? '' : 'offline'}`} />{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span></div></header>
-    <main>
-      <div className="main-layout">
-        <section className="mailroom" aria-label="Shared live mailroom">
-          <div className="bezel">
-            <div className="room-toolbar"><span><span className={`power-led ${connected ? 'on' : ''}`} />LIVE FROM THE MAILROOM</span><span className="visitors"><Sprite data={PERSON} size={2} /> {room ? `${room.online} here now` : 'Opening the door…'}</span></div>
-            <div className="canvas-wrap"><RoomCanvas room={room} ownIds={ownIds} onSelect={openBin} />{!room && <div className="room-loading">Getting the mailroom ready<span className="loading-dots">…</span></div>}</div>
-            <div className="room-caption"><div className="activity"><span className={`activity-light ${active ? 'busy' : ''}`} /><span>{activity}</span></div><span className="queue-count">{room?.queue.length || 0} in the queue</span></div>
-          </div>
-          <Dialogue line={active ? active.reaction : room ? 'Got a note for me? I’ll find it a home!' : 'Just opening up the mailroom…'} />
-          {roomError && <div className="connection-warning" role="status">{roomError}</div>}
-          <div className="bin-grid">{CATEGORIES.map(category => <button key={category} className="bin-card" onClick={() => openBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
-            <span className="bin-icon"><Sprite data={BIN_ICONS[category]} size={4} /></span>
-            <span className="bin-label"><Sprite data={ARROW} size={2} className="bin-cursor" />{BIN_META[category].label}</span><span className="bin-count">{countLabel(room?.counts[category] || 0)}</span>
-          </button>)}</div>
-        </section>
-        <aside className="compose-column">
-          <section className="composer"><h2>Send a little note.</h2>
-            <form onSubmit={send}><label htmlFor="message" className="sr-only">Your message to Jev</label><div className="textarea-wrap"><textarea id="message" ref={textarea} value={text} onChange={event => setText(event.target.value)} placeholder={"Dear Jev,\nI’ve been thinking…"} maxLength={280} rows={5} required disabled={sending} aria-describedby="public-note character-count" /><span id="character-count" className={text.length > 260 ? 'character-count near-limit' : 'character-count'}>{text.length}<span> / 280</span></span></div>
-              <button className="send-button" type="submit" disabled={!text.trim() || sending}>{sending ? 'Handing it to Jev…' : 'Send to Jev'}</button><p className="public-note" id="public-note"><Sprite data={EXCLAIM} size={2} /> Accepted notes are public. Leave out personal details.</p>{sendError && <p className="inline-error" role="alert">{sendError}</p>}
-            </form>
-          </section>
-          {receipts[0] && <Receipt receipt={receipts[0]} openBin={openBin} />}
-        </aside>
-      </div>
-      {room?.mode === 'demo' && <div className="demo-notice"><span>DEMO MODE</span> Jev is using local sorting rules. Connect OpenRouter to give him AI-powered judgment.</div>}
-    </main>
-    <footer className="site-footer"><span>{total} notes filed with care <Sprite data={BIN_ICONS.compliments} size={2} className="footer-flower" /></span></footer>
-    {selection.category && <HistoryPanel category={selection.category} highlight={selection.message} room={room} onSelect={openBin} onClose={closeBin} />}
+  const closeWindow = useCallback(() => setOverlay(null), []);
+  const compose = useCallback(() => { setOverlay('compose'); setTalk(null); if (selection.category) closeBin(); }, [selection.category, closeBin]);
+  const sent = useCallback((receipt: SubmissionReceipt) => {
+    setReceipts(current => [receipt, ...current.filter(item => item.id !== receipt.id)].slice(0, 8));
+    setOverlay(null);
+    setTalk({ speaker: null, line: 'You drop your note in the INCOMING tray. Jev’s on his way!', ends: 'time' });
+  }, []);
+  const use = useCallback((spot: Spot | null) => {
+    if (!spot) { setTalk(null); return; }
+    if (spot.kind === 'bin') openBin(spot.category);
+    else if (spot.kind === 'incoming') compose();
+    else if (spot.kind === 'trash') setTalk({ speaker: null, line: 'The trash can. Notes that break the mailroom rules end up in here, and Jev never shows anyone what they said.', ends: 'leave' });
+    else setTalk(current => {
+      const active = room?.active;
+      const line = active ? active.reaction : room?.queue.length ? 'Hang on, I’m reading one right now!' : JEV_IDLE[(JEV_IDLE.indexOf(current?.line ?? '') + 1) % JEV_IDLE.length];
+      return { speaker: 'JEV', line, ends: 'leave' };
+    });
+  }, [openBin, compose, room]);
+  const walked = useCallback(() => setTalk(current => current?.ends === 'walk' ? null : current), []);
+  const nearby = useCallback((spot: Spot | null) => { setNear(spot); setTalk(current => current?.ends === 'leave' ? null : current); }, []);
+  const paused = !!overlay || !!selection.category;
+  // On touch screens the text box sits at the top, clear of the floor and the pad.
+  const dialogue = talk && !paused && <Dialogue talk={talk} onDismiss={() => setTalk(null)} />;
+  return <div className={`game ${touch ? 'touch' : ''}`}>
+    <RoomCanvas room={room} ownIds={ownIds} look={look} selfId={selfId} visitors={visitors} pad={pad} paused={paused} beacon={beacon} onNearby={nearby} onUse={use} onWalk={walked} onMove={move} />
+    {!room && <div className="room-loading">Getting the mailroom ready<span className="loading-dots">…</span></div>}
+    <header className="hud-top">
+      <h1 className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></h1>
+      <span className="room-live"><span className={`power-led ${connected ? 'on' : ''}`} /><span>{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span><span className="visitors"><Sprite data={PERSON} size={2} /> {room ? `${room.online} here` : '…'}</span></span>
+      <button className="start-button" onClick={() => setOverlay('menu')}>MENU</button>
+    </header>
+    <div className="hud-notices">
+      {touch && dialogue}
+      {latest && <Receipt receipt={latest} openBin={openBin} />}
+      {roomError && <div className="connection-warning" role="status">{roomError}</div>}
+    </div>
+    {!paused && <div className="hud-bottom">
+      {!touch && dialogue}
+      {near && <button className="prompt" onClick={() => use(near)}><span className="key">{touch ? 'A' : 'SPACE'}</span>{promptFor(near)}</button>}
+    </div>}
+    {touch && !paused && <TouchPad pad={pad} onUse={() => { pad.current.use = true; }} />}
+    {overlay === 'menu' && <MenuPanel room={room} touch={touch} onClose={closeWindow} onCompose={compose} onBin={openBin} />}
+    {overlay === 'compose' && <ComposePanel onClose={closeWindow} onSent={sent} />}
+    {selection.category && <HistoryPanel category={selection.category} highlight={selection.message} room={room} onSelect={openBin} onClose={closeBin} onCompose={compose} />}
   </div>;
 }

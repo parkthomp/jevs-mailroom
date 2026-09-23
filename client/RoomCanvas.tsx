@@ -1,43 +1,93 @@
-import { useEffect, useRef } from 'react';
-import { BIN_META, CATEGORIES, type Category, type Point, type RoomSnapshot } from '../shared/protocol';
-import { BIN_X, jevAt } from '../shared/walk';
-import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, JEV_STAND, JEV_STEP, PALETTE, PLANT, type SpriteData } from './pixels';
+import { useEffect, useRef, type RefObject } from 'react';
+import { BIN_META, CATEGORIES, type Category, type Facing, type Point, type RoomSnapshot, type Visitor } from '../shared/protocol';
+import { BIN_X, DOOR, jevAt, ROOM_H as H, ROOM_W as W, route } from '../shared/walk';
+import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, JEV_STAND, JEV_STEP, MARKER, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
+import { canUse, clicked, facingFor, nearby, sameSpot, SPEED, step, toward, type Spot } from './player';
 
-// A handheld-sized room, scaled up with crisp pixels.
-const W = 320, H = 160;
 const [INK, DARK, LIGHT, PAPER] = PALETTE;
-export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnapshot | null; ownIds: string[]; onSelect: (category: Category) => void }) {
+// Screen space, in CSS pixels, taken by the HUD at the top and the touch pad at the bottom.
+const HUD = 64, PAD = 200;
+// Directions held on the on-screen pad, and a press of its A button waiting to be handled.
+export interface Pad { held: Set<Facing>; use: boolean }
+export type Move = Omit<Visitor, 'id'>;
+interface Props {
+  room: RoomSnapshot | null;
+  ownIds: string[];
+  look: number;
+  selfId: string | null;
+  visitors: RefObject<Map<string, Visitor>>;
+  pad: RefObject<Pad>;
+  paused: boolean; // A window is open: the room keeps going, but your character stands still.
+  beacon: Category | null; // A bin to point out, such as the one your note was just filed in.
+  onNearby: (spot: Spot | null) => void;
+  onUse: (spot: Spot | null) => void;
+  onWalk: () => void;
+  onMove: (move: Move) => void;
+}
+const KEYS: Record<string, Facing> = { arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right' };
+const USE_KEYS = new Set([' ', 'enter', 'e', 'z']);
+const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+const pressable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('button, a[href], summary');
+
+export default function RoomCanvas(props: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const state = useRef<{ room: RoomSnapshot | null; ownIds: string[]; offset: number | null }>({ room, ownIds, offset: null });
+  const latest = useRef(props);
+  latest.current = props;
+  const offset = useRef<number | null>(null);
   useEffect(() => {
-    state.current.room = room;
-    if (!room) return;
+    if (!props.room) return;
     // Anchor the clock to a genuinely new snapshot only. Re-measuring on every render pinned
     // `now` to the last snapshot's timestamp, so Jev stalled and rewound mid-walk.
-    const measured = room.serverTime - Date.now();
-    if (state.current.offset === null || Math.abs(measured - state.current.offset) > 400) state.current.offset = measured;
-  }, [room]);
-  useEffect(() => { state.current.ownIds = ownIds; }, [ownIds]);
-  useEffect(() => {
-    const el = canvas.current, wrap = el?.parentElement;
-    if (!el || !wrap) return;
-    // Whole-number scaling keeps every pixel the same size; fill the screen instead when that would waste too much room.
-    const fit = () => {
-      const available = wrap.clientWidth, dpr = window.devicePixelRatio || 1;
-      const whole = Math.floor(available * dpr / W) * W / dpr;
-      el.style.width = whole >= available * .88 ? `${whole}px` : '100%';
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(wrap);
-    fit();
-    return () => observer.disconnect();
-  }, []);
+    const measured = props.room.serverTime - Date.now();
+    if (offset.current === null || Math.abs(measured - offset.current) > 400) offset.current = measured;
+  }, [props.room]);
   useEffect(() => {
     const el = canvas.current;
-    const c = el?.getContext('2d');
-    if (!el || !c) return;
+    const screen = el?.getContext('2d');
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const c = off.getContext('2d');
+    if (!el || !screen || !c) return;
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const coarse = window.matchMedia('(pointer: coarse)');
     let raf = 0;
+
+    // Fill the screen. Phones zoom in and follow your character; bigger screens show the whole room.
+    const view = { scale: 1, ox: 0, oy: 0, top: 0, room: 0 };
+    const fit = () => {
+      const dpr = window.devicePixelRatio || 1;
+      el.width = Math.max(1, Math.round(el.clientWidth * dpr)); el.height = Math.max(1, Math.round(el.clientHeight * dpr));
+      // On touch screens, keep the room between the HUD and the pad when there's height to spare.
+      view.top = coarse.matches ? HUD * dpr : 0; view.room = el.height - (coarse.matches ? (HUD + PAD) * dpr : 0);
+      if (view.room < H * 2 * dpr) { view.top = 0; view.room = el.height; }
+      const whole = Math.min(el.width / W, view.room / H), close = coarse.matches || el.clientWidth < 700 ? 3 * dpr : 0;
+      const scale = Math.max(whole, Math.min(close, view.room / H));
+      view.scale = Math.floor(scale) / scale >= .85 ? Math.floor(scale) : scale;
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    fit();
+
+    // Your character comes in through the door and takes a few steps into the room.
+    const me = { x: DOOR[0] + Math.round(Math.random() * 12 - 6), y: DOOR[1], facing: 'up' as Facing, moving: false };
+    let auto: { path: Point[]; use?: Spot; entrance?: boolean } | null = { path: [[me.x, 138]], entrance: true };
+    let camera: Point = [me.x, me.y], shown: Spot | null = null, sent = '', sentAt = 0, sentTo: string | null = null, wasMoving = false, useKey = false;
+    const others = new Map<string, { x: number; y: number }>();
+    const keys = new Set<Facing>();
+
+    const keydown = (event: KeyboardEvent) => {
+      if (latest.current.paused || typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase(), direction = KEYS[key];
+      // Walking takes focus off any HUD button, so Space goes back to using things in the room.
+      if (direction) { keys.add(direction); event.preventDefault(); if (pressable(event.target)) (event.target as HTMLElement).blur(); }
+      else if (USE_KEYS.has(key) && !pressable(event.target) && !event.repeat) { useKey = true; event.preventDefault(); }
+    };
+    const keyup = (event: KeyboardEvent) => { const direction = KEYS[event.key.toLowerCase()]; if (direction) keys.delete(direction); };
+    const blur = () => keys.clear();
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('keyup', keyup);
+    window.addEventListener('blur', blur);
+
     const rect = (x: number, y: number, w: number, h: number, color: string) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), w, h); };
     const sprite = (data: SpriteData, x: number, y: number) => {
       x = Math.round(x); y = Math.round(y);
@@ -78,14 +128,23 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       rect(tail, edge, 2, 1, PAPER); rect(tail, edge + out, 1, 1, PAPER);
       rect(tail - 1, edge + out, 1, 1, INK); rect(tail + 1, edge + out, 1, 1, INK); rect(tail, edge + 2 * out, 1, 1, INK);
     };
-    const drawRoom = (data: RoomSnapshot | null, mine: string[], tray: { id: string }[]) => {
-      // Wall, baseboard, and a tiled floor inside a dark frame.
+    // A label printed dark on light, or light on dark when it's the thing you can use (or should look at).
+    const label = (value: string, centerX: number, y: number, lit: boolean) => {
+      if (lit) rect(Math.round(centerX - (value.length * 4 - 1) / 2) - 2, y - 2, value.length * 4 + 3, 9, INK);
+      print(value, centerX, y, lit ? PAPER : INK);
+    };
+    const drawRoom = (data: RoomSnapshot | null, mine: string[], tray: { id: string }[], lit: (spot: Spot) => boolean) => {
+      // Wall, baseboard, and a tiled floor inside a dark frame, with a doorway in the bottom wall.
       rect(0, 0, W, H, PAPER);
       rect(0, 0, W, 38, LIGHT);
       for (let x = 4; x < W; x += 8) for (let y = 4; y < 36; y += 8) rect(x, y, 1, 1, PAPER);
       rect(0, 38, W, 2, DARK); rect(0, 40, W, 1, INK);
       for (let x = 8; x < W; x += 16) for (let y = 48; y < H - 4; y += 16) rect(x, y, 1, 1, LIGHT);
-      rect(0, 0, W, 2, INK); rect(0, H - 2, W, 2, INK); rect(0, 0, 2, H, INK); rect(W - 2, 0, 2, H, INK);
+      rect(0, 0, W, 2, INK); rect(0, 0, 2, H, INK); rect(W - 2, 0, 2, H, INK);
+      rect(0, H - 2, DOOR[0] - 12, 2, INK); rect(DOOR[0] + 12, H - 2, W - DOOR[0] - 12, 2, INK);
+      rect(DOOR[0] - 14, H - 4, 2, 4, INK); rect(DOOR[0] + 12, H - 4, 2, 4, INK);
+      rect(DOOR[0] - 11, H - 9, 22, 7, DARK);
+      for (let x = DOOR[0] - 9; x < DOOR[0] + 10; x += 3) rect(x, H - 8, 1, 5, LIGHT);
       // Sign, window, and clock.
       rect(128, 3, 64, 11, INK); rect(129, 4, 62, 9, PAPER); print('JEV\'S MAILROOM', 160, 6);
       rect(12, 8, 34, 25, INK); rect(14, 10, 30, 21, PAPER); rect(28, 10, 2, 21, DARK); rect(14, 19, 30, 2, DARK);
@@ -94,7 +153,7 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       // Four bins along the wall; the icons tell them apart without colour.
       for (const key of CATEGORIES) {
         const x = BIN_X[key] - 19, count = data?.counts[key] || 0;
-        print(BIN_META[key].label.toUpperCase(), BIN_X[key], 15);
+        label(BIN_META[key].label.toUpperCase(), BIN_X[key], 15, lit({ kind: 'bin', category: key }));
         rect(x, 24, 38, 20, INK); rect(x + 2, 26, 34, 5, DARK);
         if (count) sprite(ENVELOPE, x + 7, 22);
         if (count > 1) sprite(ENVELOPE, x + 21, 21);
@@ -109,60 +168,160 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       rect(137, 78, 3, 6, INK); rect(180, 78, 3, 6, INK);
       rect(150, 67, 10, 4, PAPER); rect(152, 68, 6, 1, LIGHT); rect(170, 67, 5, 4, INK); rect(171, 68, 3, 2, PAPER);
       rect(139, 57, 9, 3, DARK); rect(140, 57, 7, 1, LIGHT); rect(143, 60, 1, 6, INK);
-      // Incoming trolley with the waiting envelopes.
-      rect(22, 98, 46, 12, INK); rect(24, 100, 42, 6, DARK); rect(24, 106, 42, 2, LIGHT);
-      rect(26, 110, 2, 10, INK); rect(62, 110, 2, 10, INK); rect(24, 120, 6, 3, INK); rect(60, 120, 6, 3, INK);
-      tray.slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 99 - Math.floor(i / 4) * 4));
-      print('INCOMING', 45, 126);
+      // The incoming desk, where visitors leave notes, with the waiting envelopes stacked on top.
+      rect(20, 98, 50, 24, INK); rect(22, 100, 46, 5, LIGHT); rect(22, 105, 46, 15, DARK); rect(22, 105, 46, 1, INK);
+      rect(26, 108, 38, 9, PAPER); label('INCOMING', 45, 110, lit({ kind: 'incoming' }));
+      rect(22, 122, 4, 2, INK); rect(64, 122, 4, 2, INK);
+      tray.slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 96 - Math.floor(i / 4) * 4));
       // Trash can.
       rect(279, 96, 6, 2, INK); rect(272, 98, 20, 3, INK); rect(274, 101, 16, 20, INK); rect(276, 101, 12, 18, DARK);
       for (const x of [279, 283, 287]) rect(x - 1, 103, 1, 14, LIGHT);
-      print('TRASH', 282, 126);
+      label('TRASH', 282, 126, lit({ kind: 'trash' }));
       sprite(PLANT, 13, 48); sprite(PLANT, 297, 48);
     };
+
+    // Clicking the floor walks you there; clicking a bin, the desk, the trash, or Jev walks you over and uses it.
+    const toRoom = (event: PointerEvent): Point => {
+      const dpr = window.devicePixelRatio || 1, bounds = el.getBoundingClientRect();
+      return [((event.clientX - bounds.left) * dpr - view.ox) / view.scale, ((event.clientY - bounds.top) * dpr - view.oy) / view.scale];
+    };
+    const jevPoint = () => jevAt(latest.current.room?.jev ?? [], Date.now() + (offset.current ?? 0)).point;
+    const pointerdown = (event: PointerEvent) => {
+      if (latest.current.paused || event.button !== 0) return;
+      const point = toRoom(event), place = clicked(point, jevPoint()), feet: Point = [me.x, me.y];
+      if (place && canUse(feet, place)) { latest.current.onUse(place.spot); return; }
+      const goal: Point = place ? place.approach : [Math.round(point[0]), Math.round(point[1])];
+      const path = route([Math.round(me.x), Math.round(me.y)], goal).slice(1);
+      auto = { path: [[Math.round(me.x), Math.round(me.y)], ...path], use: place?.spot };
+    };
+    const pointermove = (event: PointerEvent) => { el.style.cursor = clicked(toRoom(event), jevPoint()) ? 'pointer' : 'default'; };
+    el.addEventListener('pointerdown', pointerdown);
+    el.addEventListener('pointermove', pointermove);
+
+    let last = performance.now();
     const draw = (time: number) => {
-      const { room: data, ownIds: mine, offset } = state.current;
-      const now = Date.now() + (offset ?? 0), reduced = media.matches, legs = data?.jev ?? [];
-      // A note Jev is on his way to grab still sits on the trolley until he gets there.
+      const p = latest.current, { room: data, ownIds: mine } = p;
+      const dt = Math.max(0, Math.min(.05, (time - last) / 1000)); last = time;
+      const now = Date.now() + (offset.current ?? 0), reduced = media.matches, legs = data?.jev ?? [];
+      const jev = jevAt(legs, now);
+
+      // Move your character: held keys and the pad first, then any walk you clicked for.
+      const held = new Set([...keys, ...(p.pad.current?.held ?? [])]);
+      // The few steps in through the door finish first, so nobody gets wedged in the doorway.
+      const still = p.paused || !!auto?.entrance;
+      const dx = still ? 0 : +held.has('right') - +held.has('left'), dy = still ? 0 : +held.has('down') - +held.has('up');
+      const before: Point = [me.x, me.y];
+      if (dx || dy) {
+        auto = null;
+        [me.x, me.y] = step(before, dx, dy, SPEED * dt);
+        me.facing = facingFor(dx, dy, me.facing);
+      } else if (auto && !p.paused) {
+        const target = auto.path[0], next = target && toward(before, target, SPEED * dt);
+        if (!target || !next) auto = null;
+        else {
+          [me.x, me.y] = next;
+          me.facing = facingFor(Math.sign(Math.round((next[0] - before[0]) * 100)), Math.sign(Math.round((next[1] - before[1]) * 100)), me.facing);
+          if (Math.abs(me.x - target[0]) < .01 && Math.abs(me.y - target[1]) < .01) {
+            [me.x, me.y] = target;
+            auto.path.shift();
+            if (!auto.path.length) {
+              const use = auto.use; auto = null;
+              if (use) { const place = nearby([me.x, me.y], jev.point); if (place && sameSpot(place.spot, use)) p.onUse(use); }
+            }
+          }
+        }
+      }
+      me.moving = me.x !== before[0] || me.y !== before[1];
+      if (me.moving && !wasMoving && !auto?.entrance) p.onWalk();
+      wasMoving = me.moving;
+      const place = nearby([me.x, me.y], jev.point);
+      if (!sameSpot(place?.spot ?? null, shown)) { shown = place?.spot ?? null; p.onNearby(shown); }
+      const pad = p.pad.current;
+      if ((useKey || pad?.use) && !p.paused) p.onUse(shown);
+      useKey = false; if (pad) pad.use = false;
+
+      // Tell everyone else where you are, a few times a second at most.
+      const move: Move = { x: Math.round(me.x), y: Math.round(me.y), facing: me.facing, look: p.look, moving: me.moving }, encoded = JSON.stringify(move);
+      if (p.selfId && (encoded !== sent || sentTo !== p.selfId) && time - sentAt > 100) { p.onMove(move); sent = encoded; sentAt = time; sentTo = p.selfId; }
+
+      // A note Jev is on his way to grab still sits on the desk until he gets there.
       const unclaimed = legs.filter(leg => leg.kind === 'run' && leg.carrying && leg.from > now).map(leg => ({ id: leg.carrying! }));
-      drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])]);
-      const { point, leg } = jevAt(legs, now);
+      const hop = reduced ? 0 : Math.floor(time / 300) % 2, blink = reduced || Math.floor(time / 500) % 2 === 0;
+      const beacon: Spot | null = p.beacon ? { kind: 'bin', category: p.beacon } : null;
+      drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])], spot => (!p.paused && sameSpot(spot, place?.spot ?? null)) || (blink && sameSpot(spot, beacon)));
+      const { leg } = jev;
       const moving = !!leg && (leg.kind === 'run' || leg.kind === 'walk'), running = leg?.kind === 'run';
-      const position = reduced && moving ? leg.path.at(-1)! : point;
-      const held = leg?.carrying && leg.kind !== 'drop' ? leg.carrying : undefined;
+      const position = reduced && moving ? leg.path.at(-1)! : jev.point;
+      const carried = leg?.carrying && leg.kind !== 'drop' ? leg.carrying : undefined;
       let flight: { from: Point; to: Point; t: number; arc: number } | null = null;
       if (leg?.kind === 'drop' && leg.to !== null && !reduced) {
         // Toss over the can's rim, or drop through the bin's slot.
-        const [dx, dy] = leg.path[0], trash = leg.destination === 'trash';
-        flight = { from: [dx - 4, dy - 23], to: trash ? [278, 92] : [dx - 4, 20], t: (now - leg.from) / Math.max(1, leg.to - leg.from), arc: trash ? 16 : 4 };
+        const [fx, fy] = leg.path[0], trash = leg.destination === 'trash';
+        flight = { from: [fx - 4, fy - 23], to: trash ? [278, 92] : [fx - 4, 20], t: (now - leg.from) / Math.max(1, leg.to - leg.from), arc: trash ? 16 : 4 };
       }
-      const step = moving && !reduced && Math.floor(time / (running ? 70 : 140)) % 2 === 1;
-      const x = Math.round(position[0]), y = Math.round(position[1]), bob = step ? 1 : 0;
-      if (running && !reduced) {
-        // Speed lines trailing behind a sprint.
-        const before = jevAt(legs, now - 40).point, dx = Math.sign(Math.round(position[0] - before[0])), dy = Math.sign(Math.round(position[1] - before[1]));
-        if (dx) for (const [oy, length] of [[-12, 4], [-8, 6], [-4, 4]]) rect(dx > 0 ? x - 8 - length : x + 8, y + oy, length, 1, DARK);
-        else if (dy) for (const [ox, length] of [[-4, 3], [0, 5], [4, 3]]) rect(x + ox, dy > 0 ? y - 18 - length : y + 2, 1, length, DARK);
+      const jevStep = moving && !reduced && Math.floor(time / (running ? 70 : 140)) % 2 === 1;
+      const x = Math.round(position[0]), y = Math.round(position[1]), bob = jevStep ? 1 : 0;
+
+      // Everyone in the room, drawn back to front.
+      const people: { y: number; draw: () => void }[] = [{ y, draw: () => {
+        if (running && !reduced) {
+          // Speed lines trailing behind a sprint.
+          const behind = jevAt(legs, now - 40).point, sx = Math.sign(Math.round(position[0] - behind[0])), sy = Math.sign(Math.round(position[1] - behind[1]));
+          if (sx) for (const [oy, length] of [[-12, 4], [-8, 6], [-4, 4]]) rect(sx > 0 ? x - 8 - length : x + 8, y + oy, length, 1, DARK);
+          else if (sy) for (const [ox, length] of [[-4, 3], [0, 5], [4, 3]]) rect(x + ox, sy > 0 ? y - 18 - length : y + 2, 1, length, DARK);
+        }
+        rect(x - 5, y - 2, 10, 3, LIGHT);
+        sprite(jevStep ? JEV_STEP : JEV_STAND, x - 6, y - 16 - bob);
+        if (carried) sprite(mine.includes(carried) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
+      } }];
+      const character = (vx: number, vy: number, look: number, facing: Facing, walking: boolean) => {
+        const stepping = walking && Math.floor(time / 130) % 2 === 1, px = Math.round(vx), py = Math.round(vy);
+        return { y: py, draw: () => { rect(px - 4, py - 1, 8, 2, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 5, py - 14 - (stepping ? 1 : 0)); } };
+      };
+      const seen = new Set<string>();
+      for (const visitor of p.visitors.current?.values() ?? []) {
+        if (visitor.id === p.selfId) continue;
+        seen.add(visitor.id);
+        let at = others.get(visitor.id);
+        // Glide between updates; jump if they've wandered far (or just arrived).
+        if (!at || reduced || Math.abs(at.x - visitor.x) + Math.abs(at.y - visitor.y) > 48) { at = { x: visitor.x, y: visitor.y }; others.set(visitor.id, at); }
+        else { const k = Math.min(1, dt * 12); at.x += (visitor.x - at.x) * k; at.y += (visitor.y - at.y) * k; }
+        people.push(character(at.x, at.y, visitor.look, visitor.facing, visitor.moving));
       }
-      rect(x - 5, y - 2, 10, 3, LIGHT);
-      sprite(step ? JEV_STEP : JEV_STAND, x - 6, y - 16 - bob);
-      if (held) sprite(mine.includes(held) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
+      for (const id of others.keys()) if (!seen.has(id)) others.delete(id);
+      people.push(character(me.x, me.y, p.look, me.facing, me.moving));
+      people.sort((a, b) => a.y - b.y).forEach(person => person.draw());
+
       if (flight && flight.t < 1) {
         const t = Math.max(0, flight.t);
         sprite(leg?.carrying && mine.includes(leg.carrying) ? ENVELOPE_OWN : ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
       }
       if (leg?.say) say(leg.say, x, y - 25 - bob, y);
-      // Exposes Jev's position for end-to-end checks; updated only when it changes.
-      if (el.dataset.jevX !== String(x)) el.dataset.jevX = String(x);
+      // An arrow over you, or over Jev when you're close enough to talk. Everything else lights up its label.
+      if (place?.spot.kind === 'jev' && !p.paused) sprite(MARKER, x - 2, y - 30 - bob + hop);
+      else if (!place) sprite(MARKER, Math.round(me.x) - 2, Math.round(me.y) - 20 - hop);
+
+      // Scale the room up onto the screen, following your character when it doesn't all fit.
+      const rw = W * view.scale, rh = H * view.scale, follow = reduced ? 1 : Math.min(1, dt * 6);
+      camera = [camera[0] + (me.x - camera[0]) * follow, camera[1] + (me.y - camera[1]) * follow];
+      const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+      view.ox = Math.round(rw <= el.width ? (el.width - rw) / 2 : clamp(el.width / 2 - camera[0] * view.scale, el.width - rw, 0));
+      view.oy = Math.round(rh <= view.room ? view.top + (view.room - rh) / 2 : clamp(el.height / 2 - camera[1] * view.scale, el.height - rh, 0));
+      screen.fillStyle = INK; screen.fillRect(0, 0, el.width, el.height);
+      screen.imageSmoothingEnabled = false;
+      screen.drawImage(off, view.ox, view.oy, rw, rh);
+
+      // Exposes positions for end-to-end checks; updated only when they change.
+      const report = { jevX: String(x), playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size) };
+      for (const [key, value] of Object.entries(report)) if (el.dataset[key] !== value) el.dataset[key] = value;
       raf = window.requestAnimationFrame(draw);
     };
     raf = window.requestAnimationFrame(draw);
-    return () => window.cancelAnimationFrame(raf);
+    return () => {
+      window.cancelAnimationFrame(raf); observer.disconnect();
+      window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur);
+      el.removeEventListener('pointerdown', pointerdown); el.removeEventListener('pointermove', pointermove);
+    };
   }, []);
-  const hit = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - bounds.left) * W / bounds.width, y = (event.clientY - bounds.top) * H / bounds.height;
-    return y > 14 && y < 48 ? CATEGORIES.find(category => Math.abs(x - BIN_X[category]) < 22) : undefined;
-  };
-  return <canvas ref={canvas} width={W} height={H} className="room-canvas" role="img" onClick={event => { const category = hit(event); if (category) onSelect(category); }} onMouseMove={event => { event.currentTarget.style.cursor = hit(event) ? 'pointer' : 'default'; }} aria-label="A pixel-art mailroom with Jev, an incoming mail trolley, four sorting bins, a trash can, and a wall clock showing your local time. Browse the bins using the buttons below." />;
+  return <canvas ref={canvas} className="room-canvas" role="img" aria-label="A pixel-art mailroom you can walk around. Jev sorts notes into four bins along the wall: Compliments, Ideas, Complaints, and Misc. Walk to a bin to read its notes, or to the incoming desk to write one. Use the arrow keys to walk and Space to use things, or the Menu button for the same options." />;
 }

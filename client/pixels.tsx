@@ -1,4 +1,4 @@
-import type { Category } from '../shared/protocol';
+import { LOOKS, type Category, type Facing } from '../shared/protocol';
 
 // The classic four-shade handheld palette, darkest to lightest. CSS mirrors these as --p0..--p3.
 export const PALETTE = ['#081820', '#346856', '#88c070', '#e0f8d0'] as const;
@@ -26,6 +26,32 @@ export const JEV_STAND: SpriteData = [
 ];
 export const JEV_STEP: SpriteData = [...JEV_STAND.slice(0, 14), '...022220...', '...000000...'];
 export const JEV_FACE: SpriteData = JEV_STAND.slice(0, 9);
+
+// Visitors are a head shorter than Jev. Each wears one of LOOKS outfits: a hairstyle, a hair shade, and
+// a shirt shade. H, S, and P stand for hair, shirt, and trousers until the look fills them in.
+const EYES: Record<Facing, string> = { down: '303303', left: '303333', right: '333303', up: 'HHHHHH' };
+function visitorRows(style: number, facing: Facing, step: boolean): string[] {
+  const back = facing === 'up', eyes = EYES[facing];
+  const top = ['...0000...', '..0HHHH0..', '.0HHHHHH0.', style === 2 ? '.00000000.' : back ? '.0HHHHHH0.' : '.0H3333H0.'];
+  const face = style === 1
+    ? [`0H${eyes}H0`, back ? '0HHHHHHHH0' : '0H333333H0', back ? '0H0HHHH0H0' : '0H033330H0']
+    : [`.0${eyes}0.`, back ? '.0HHHHHH0.' : '.03333330.', back ? '..0HHHH0..' : '..033330..'];
+  const legs = step ? ['..0PPPP0..', '...0PP0...', '...0000...'] : ['..0PPPP0..', '..0P00P0..', '..00..00..'];
+  return [...top, ...face, '..0SSSS0..', '.0SSSSSS0.', '03SSSSSS30', '.0SSSSSS0.', ...legs];
+}
+const visitorSprites = new Map<string, SpriteData>();
+export function visitorSprite(look: number, facing: Facing, step: boolean): SpriteData {
+  const key = `${look}:${facing}:${step}`;
+  let sprite = visitorSprites.get(key);
+  if (!sprite) {
+    const index = ((look % LOOKS) + LOOKS) % LOOKS, style = index % 3, hair = String(Math.floor(index / 3) % 3), shirt = index < 9 ? '2' : '1';
+    sprite = visitorRows(style, facing, step).map(row => row.replaceAll('H', hair).replaceAll('S', shirt).replaceAll('P', shirt === '2' ? '1' : '0'));
+    visitorSprites.set(key, sprite);
+  }
+  return sprite;
+}
+// Bobs over your own character, and over Jev when you're close enough to talk.
+export const MARKER: SpriteData = ['00000', '.000.', '..0..'];
 
 export const ENVELOPE: SpriteData = ['00000000', '00333300', '03033030', '03300330', '03333330', '00000000'];
 // The sender's own envelope is shaded so they can pick it out on the trolley.

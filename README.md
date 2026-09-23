@@ -1,8 +1,8 @@
 # Jev’s Mailroom
 
-A shared pixel-art mailroom. Leave Jev a short message, watch him carry the envelope to **Compliments, Ideas, Complaints, or Misc**, then open a bin to read its messages. Screened-out messages get a visible toss into the trash; their contents stay private. There are no correction or recategorization controls.
+A shared pixel-art mailroom that fills the screen and that you walk around in. Every visitor gets a little character: walk with the arrow keys or WASD (or the on-screen pad and A button on touch screens, or by clicking where to go). Walk up to the **INCOMING** desk to leave Jev a short message, watch him carry the envelope to **Compliments, Ideas, Complaints, or Misc**, then walk up to a bin to read its messages. Everyone in the room sees everyone else's character. The **Menu** button offers the same actions without walking. Screened-out messages get a visible toss into the trash; their contents stay private. There are no correction or recategorization controls.
 
-React and Canvas draw the room. An Express/WebSocket server shares its state, and a worker asks [Jev](https://openrouter.ai/typesafe/jev-1.13), TypeSafe’s decision model, through OpenRouter to screen messages, pick their bin, and pick Jev’s reaction. The server controls delivery timing so every visitor watches the same Jev.
+React and Canvas draw the room. An Express/WebSocket server shares its state (character positions are relayed over the same socket and kept only in the web server's memory), and a worker asks [Jev](https://openrouter.ai/typesafe/jev-1.13), TypeSafe’s decision model, through OpenRouter to screen messages, pick their bin, and pick Jev’s reaction. The server controls delivery timing so every visitor watches the same Jev.
 
 ## Run locally
 
