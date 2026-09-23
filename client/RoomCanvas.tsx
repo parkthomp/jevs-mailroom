@@ -277,10 +277,10 @@ export default function RoomCanvas(props: Props) {
         sprite(jevSprite(jevFacing, jevStep), x - 6, y - 16 - bob);
         if (carried) sprite(mine.includes(carried) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
       } }];
-      const tags: { name: string; x: number; y: number; own: boolean }[] = [];
-      const character = (vx: number, vy: number, name: string | null, look: number, facing: Facing, walking: boolean, own: boolean) => {
+      const tags: { name: string; x: number; y: number }[] = [];
+      const character = (vx: number, vy: number, name: string | null, look: number, facing: Facing, walking: boolean) => {
         const stepping = walking && Math.floor(time / 130) % 2 === 1, px = Math.round(vx), py = Math.round(vy);
-        if (name) tags.push({ name, x: px, y: py + 3, own });
+        if (name) tags.push({ name, x: px, y: py + 3 });
         return { y: py, draw: () => { rect(px - 5, py - 2, 10, 3, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 6, py - 16 - (stepping ? 1 : 0)); } };
       };
       const seen = new Set<string>(), names: string[] = [];
@@ -291,10 +291,10 @@ export default function RoomCanvas(props: Props) {
         // Glide between updates; jump if they've wandered far (or just arrived).
         if (!at || reduced || Math.abs(at.x - visitor.x) + Math.abs(at.y - visitor.y) > 48) { at = { x: visitor.x, y: visitor.y }; others.set(visitor.id, at); }
         else { const k = Math.min(1, dt * 12); at.x += (visitor.x - at.x) * k; at.y += (visitor.y - at.y) * k; }
-        people.push(character(at.x, at.y, visitor.name, visitor.look, visitor.facing, visitor.moving, false));
+        people.push(character(at.x, at.y, visitor.name, visitor.look, visitor.facing, visitor.moving));
       }
       for (const id of others.keys()) if (!seen.has(id)) others.delete(id);
-      people.push(character(me.x, me.y, p.name, p.look, me.facing, me.moving, true));
+      people.push(character(me.x, me.y, p.name, p.look, me.facing, me.moving));
       people.sort((a, b) => a.y - b.y).forEach(person => person.draw());
 
       if (flight && flight.t < 1) {
@@ -313,7 +313,7 @@ export default function RoomCanvas(props: Props) {
       screen.imageSmoothingEnabled = false;
       screen.drawImage(off, view.ox, view.oy, rw, rh);
       // Names sit below the characters and are drawn at half the room's pixel scale, so they stay
-      // crisp without competing with the characters. Yours is dark and is drawn last.
+      // crisp without competing with the characters. Every tag uses light text on a dark background.
       const unit = Math.max(window.devicePixelRatio || 1, Math.floor(view.scale / 2));
       for (const tag of tags) {
         const textWidth = (tag.name.length * 4 - 1) * unit, width = textWidth + 2 * unit, height = 7 * unit;
@@ -322,8 +322,7 @@ export default function RoomCanvas(props: Props) {
         const left = Math.round(Math.max(roomLeft, Math.min(roomRight - width, view.ox + tag.x * view.scale - width / 2)));
         const top = Math.round(Math.max(roomTop, Math.min(roomBottom - height, view.oy + tag.y * view.scale)));
         screen.fillStyle = INK; screen.fillRect(left, top, width, height);
-        if (!tag.own) { screen.fillStyle = PAPER; screen.fillRect(left + unit, top + unit, width - 2 * unit, height - 2 * unit); }
-        screen.fillStyle = tag.own ? PAPER : INK;
+        screen.fillStyle = PAPER;
         let letterX = left + unit;
         for (const char of tag.name) {
           const glyph = FONT[char] ?? FONT[' '];
