@@ -28,17 +28,13 @@ h1,h2,h3{font-weight:400;font-family:var(--pixel)}
 .room-live{display:flex;gap:10px;align-items:center;font-family:var(--pixel);font-size:8px;letter-spacing:1px;color:var(--p1)}
 .status-dot{display:inline-block;width:8px;height:8px;background:var(--p1);flex-shrink:0}
 .status-dot.offline{background:transparent;box-shadow:inset 0 0 0 2px var(--p1);animation:blink 1s steps(1) infinite}
-.about-link{display:flex;align-items:center;gap:8px;font-size:22px}
-.about-link:hover{text-decoration:underline}
 
 /* Title */
 .intro{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:48px 0 36px}
-.intro-eyebrow{display:flex;align-items:center;gap:10px}
-.little-star{color:var(--p1)}
-h1{font-size:32px;line-height:1.4;margin-top:18px;text-shadow:4px 4px 0 var(--p2)}
+h1{font-size:32px;line-height:1.4;text-shadow:4px 4px 0 var(--p2)}
 h1 em{font-style:normal;color:var(--p1)}
 .intro>p{font-size:22px;line-height:1.3;color:var(--p1);margin-bottom:6px}
-.main-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:32px;align-items:start}
+.main-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:32px;align-items:start;margin-bottom:48px}
 .mailroom{min-width:0}
 
 /* The room sits in a handheld screen bezel, rounded at the bottom right like the original. */
@@ -67,15 +63,11 @@ h1 em{font-style:normal;color:var(--p1)}
 .connection-warning{margin-top:12px;padding:8px 12px;background:var(--p0);color:var(--p3);font-size:20px}
 
 /* Bins read like an item menu, with a cursor on the entry you are pointing at. */
-.bins-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:30px 0 14px}
-.bins-heading>span:last-child{display:flex;align-items:center;gap:8px;font-size:20px;color:var(--p1)}
-.bin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.bin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:24px}
 .bin-card{display:block;text-align:left;background:var(--p3);border:3px solid var(--p0);box-shadow:4px 4px 0 var(--p1);padding:14px 12px 12px;transition:transform .08s steps(2),box-shadow .08s steps(2)}
 .bin-card:hover,.bin-card:focus-visible{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--p1)}
 .bin-card:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--p1)}
-.bin-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
-.bin-icon{display:grid;place-items:center;width:44px;height:44px;background:var(--p2);border:3px solid var(--p0)}
-.bin-number{font-family:var(--pixel);font-size:8px;color:var(--p1)}
+.bin-icon{display:grid;margin-bottom:14px;place-items:center;width:44px;height:44px;background:var(--p2);border:3px solid var(--p0)}
 .bin-label{display:flex;align-items:center;gap:6px;font-family:var(--pixel);font-size:12px;line-height:1.4;margin:0 0 6px -2px}
 .bin-cursor{visibility:hidden}
 .bin-card:hover .bin-cursor,.bin-card:focus-visible .bin-cursor{visibility:visible;animation:blink 1s steps(1) infinite}
@@ -83,10 +75,7 @@ h1 em{font-style:normal;color:var(--p1)}
 
 /* Composer */
 .composer{position:relative;padding:24px 22px 20px}
-.composer-stamp{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin:0 0 20px;color:var(--p1)}
-.composer-stamp span{font-family:var(--pixel);font-size:8px;line-height:1.8;letter-spacing:1px;border:2px dashed var(--p1);padding:4px 8px}
-.composer h2{font-size:16px;line-height:1.5;margin:12px 0 10px}
-.composer>p{font-size:20px;line-height:1.2;color:var(--p1)}
+.composer h2{font-size:16px;line-height:1.5}
 .composer form{margin-top:18px}
 .textarea-wrap{position:relative;background:var(--p3);border:3px solid var(--p0);box-shadow:inset 4px 4px 0 var(--p2)}
 .textarea-wrap:focus-within{outline:3px solid var(--p0);outline-offset:3px}
@@ -99,20 +88,11 @@ textarea::placeholder{color:var(--p1);opacity:1}
 .send-button:not(:disabled):hover{background:var(--p1)}
 .send-button:not(:disabled):active{transform:translate(4px,4px);box-shadow:none}
 .send-button:disabled{background:var(--p2);color:var(--p1);box-shadow:none}
-.a-button{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--button);color:var(--p3);font-size:8px;box-shadow:inset -2px -2px 0 #0000004d}
-.send-button:disabled .a-button{opacity:.55}
 .public-note{display:flex;gap:8px;align-items:flex-start;margin-top:14px;font-size:18px;line-height:1.2;color:var(--p1)}
 .public-note svg{margin-top:2px}
 .inline-error{margin-top:12px;padding:8px 12px;background:var(--p0);color:var(--p3);font-size:20px;line-height:1.2}
 .inline-error .text-button{color:var(--p2)}
 
-/* Sidebar notes */
-.first-note{display:flex;gap:14px;align-items:center;margin:24px 18px;font-size:20px;line-height:1.2}
-.doodle-arrow{color:var(--p1)}
-.first-note p span{color:var(--p1)}
-.postscript{display:flex;align-items:flex-start;gap:14px;margin:24px 14px 0;padding-top:20px;background:var(--dash) top/100% 4px no-repeat}
-.ps-label{font-family:var(--pixel);font-size:12px;line-height:1.6;color:var(--p1)}
-.postscript p{font-size:20px;line-height:1.2;color:var(--p1)}
 .receipt{display:flex;gap:12px;margin-top:20px;padding:14px;background:var(--p3);border:3px solid var(--p0);box-shadow:4px 4px 0 var(--p1)}
 .receipt-done{background:var(--p2)}
 .receipt-icon{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;background:var(--p3);border:3px solid var(--p0)}
@@ -126,10 +106,6 @@ textarea::placeholder{color:var(--p1);opacity:1}
 .receipt-done .text-button{color:var(--p0)}
 
 /* How it works, notices, and footer */
-.how-it-works{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:40px;margin-top:48px;padding:36px 0;background:var(--dash) top/100% 4px no-repeat}
-.how-intro h2{font-size:16px;line-height:1.6;margin-top:12px}
-.how-step>span{font-family:var(--pixel);font-size:8px;line-height:1.6;letter-spacing:1px}
-.how-step p{font-size:20px;line-height:1.2;color:var(--p1);margin-top:12px;max-width:240px}
 .demo-notice{display:flex;align-items:center;gap:12px;padding:14px 0;font-size:20px;color:var(--p1);background:var(--dash) top/100% 4px no-repeat}
 .demo-notice>span{font-family:var(--pixel);font-size:8px;letter-spacing:1px;background:var(--p0);color:var(--p3);padding:5px 7px;white-space:nowrap}
 .site-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 0 28px;font-size:20px;color:var(--p1);background:var(--dash) top/100% 4px no-repeat}
@@ -180,24 +156,13 @@ textarea::placeholder{color:var(--p1);opacity:1}
   h1{font-size:24px}
   .intro>p{font-size:20px}
   .bin-label{font-size:10px}
-  .how-it-works{gap:24px}
 }
 @media(max-width:880px){
   .app-shell{padding:0 24px}
   .site-header{height:80px}
-  .about-link{display:none}
   .intro{display:block;padding:36px 0 28px}
   .intro>p{margin-top:18px}
-  .intro>p br{display:none}
   .main-layout{grid-template-columns:minmax(0,1fr)}
-  .compose-column{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
-  .composer{grid-row:span 3}
-  .first-note{align-self:end}
-  .postscript{align-self:start;margin:0 10px}
-  .receipt{align-self:end;margin:20px 0}
-  .how-it-works{grid-template-columns:1fr 1fr;gap:28px 36px}
-  .how-intro h2 br{display:none}
-  .how-step p{max-width:none}
   .bin-label{font-size:12px}
 }
 @media(max-width:700px){
@@ -218,15 +183,10 @@ textarea::placeholder{color:var(--p1);opacity:1}
   .dialogue p{font-size:22px}
   .bin-card{padding:12px 10px 10px}
   .bin-label{font-size:10px}
-  .compose-column{display:block}
   .composer{padding:20px 18px 18px}
   .composer h2{font-size:14px}
   textarea{min-height:136px}
   .send-button{font-size:10px}
-  .first-note{margin:22px 10px}
-  .postscript{margin:22px 8px 0}
-  .how-it-works{grid-template-columns:1fr;gap:22px;margin-top:36px;padding:28px 0}
-  .bins-heading>span:last-child{display:none}
   .demo-notice{align-items:flex-start;flex-direction:column;gap:8px}
   .site-footer{flex-direction:column;align-items:flex-start;gap:8px;font-size:18px}
   .history-panel{width:100%;height:90dvh;align-self:flex-end;padding:0 18px;border-left:0;border-top:4px solid var(--p0);animation:enter-sheet .24s steps(4)}

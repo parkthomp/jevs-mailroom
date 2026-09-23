@@ -77,6 +77,21 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
         x += 4;
       }
     };
+    // A round wall clock showing the visitor's own local time; redrawn every frame, so it keeps itself current.
+    const clock = (cx: number, cy: number) => {
+      const disc = (radius: number, color: string) => {
+        for (let dy = -radius; dy <= radius; dy++) { const half = Math.floor(Math.sqrt((radius + .5) ** 2 - dy * dy)); rect(cx - half, cy + dy, half * 2 + 1, 1, color); }
+      };
+      const hand = (turns: number, length: number) => {
+        const angle = turns * 2 * Math.PI;
+        for (let step = 0; step <= length; step += .5) rect(cx + Math.round(Math.sin(angle) * step), cy - Math.round(Math.cos(angle) * step), 1, 1, INK);
+      };
+      disc(7, INK); disc(6, PAPER);
+      for (const [dx, dy] of [[0, -5], [5, 0], [0, 5], [-5, 0]]) rect(cx + dx, cy + dy, 1, 1, DARK);
+      const time = new Date(), minutes = time.getMinutes() + time.getSeconds() / 60;
+      hand((time.getHours() % 12 + minutes / 60) / 12, 3);
+      hand(minutes / 60, 5);
+    };
     const drawRoom = (data: RoomSnapshot | null, mine: string[]) => {
       // Wall, baseboard, and a tiled floor inside a dark frame.
       rect(0, 0, W, H, PAPER);
@@ -89,7 +104,7 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       rect(128, 3, 64, 11, INK); rect(129, 4, 62, 9, PAPER); print('JEV\'S MAILROOM', 160, 6);
       rect(12, 8, 34, 25, INK); rect(14, 10, 30, 21, PAPER); rect(28, 10, 2, 21, DARK); rect(14, 19, 30, 2, DARK);
       rect(17, 13, 6, 2, LIGHT); rect(33, 24, 7, 2, LIGHT); rect(10, 32, 38, 3, DARK); rect(10, 35, 38, 1, INK);
-      rect(298, 10, 10, 12, INK); rect(296, 12, 14, 8, INK); rect(298, 12, 10, 8, PAPER); rect(302, 13, 1, 4, INK); rect(302, 16, 3, 1, INK);
+      clock(303, 18);
       // Four bins along the wall; the icons tell them apart without colour.
       for (const key of CATEGORIES) {
         const x = BIN_X[key] - 19, count = data?.counts[key] || 0;
@@ -168,5 +183,5 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
     const x = (event.clientX - bounds.left) * W / bounds.width, y = (event.clientY - bounds.top) * H / bounds.height;
     return y > 14 && y < 48 ? CATEGORIES.find(category => Math.abs(x - BIN_X[category]) < 22) : undefined;
   };
-  return <canvas ref={canvas} width={W} height={H} className="room-canvas" role="img" onClick={event => { const category = hit(event); if (category) onSelect(category); }} onMouseMove={event => { event.currentTarget.style.cursor = hit(event) ? 'pointer' : 'default'; }} aria-label="A pixel-art mailroom with Jev, an incoming mail trolley, four sorting bins, and a trash can. Browse the bins using the buttons below." />;
+  return <canvas ref={canvas} width={W} height={H} className="room-canvas" role="img" onClick={event => { const category = hit(event); if (category) onSelect(category); }} onMouseMove={event => { event.currentTarget.style.cursor = hit(event) ? 'pointer' : 'default'; }} aria-label="A pixel-art mailroom with Jev, an incoming mail trolley, four sorting bins, a trash can, and a wall clock showing your local time. Browse the bins using the buttons below." />;
 }

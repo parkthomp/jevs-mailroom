@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BIN_META, CATEGORIES, type BinPage, type Category, type PublicMessage, type RoomSnapshot, type SubmissionProgress, type SubmissionReceipt } from '../shared/protocol';
-import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, STAR, TRASH_ICON, UP } from './pixels';
+import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP } from './pixels';
 import RoomCanvas from './RoomCanvas';
 
 type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress };
@@ -22,8 +22,8 @@ function readReceipts(): SavedReceipt[] {
 function EnvelopeIcon({ className = '' }: { className?: string }) {
   return <Sprite data={ENVELOPE} className={className} />;
 }
-function Arrow({ down = false }: { down?: boolean }) {
-  return <Sprite data={down ? DOWN : ARROW} size={2} />;
+function Arrow() {
+  return <Sprite data={ARROW} size={2} />;
 }
 // Reveals a line letter by letter like a handheld text box; screen readers get the whole line at once.
 function useTypewriter(line: string, length: number) {
@@ -224,9 +224,9 @@ export default function App() {
   // The canvas interpolates exact server timing; this label remains deliberately simple.
   const activity = active ? active.destination === 'trash' ? 'Jev is taking out the trash' : `Jev is sorting a little mail` : room?.queue.length ? 'A few notes are being checked' : 'Jev is ready for your next note';
   return <div className="app-shell">
-    <header className="site-header"><a href="/" className="brand" aria-label="Jev’s Mailroom home"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></a><div className="header-right"><span className="room-live"><span className={`status-dot ${connected ? '' : 'offline'}`} />{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span><a href="#how-it-works" className="about-link">What is this? <Arrow /></a></div></header>
+    <header className="site-header"><a href="/" className="brand" aria-label="Jev’s Mailroom home"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></a><div className="header-right"><span className="room-live"><span className={`status-dot ${connected ? '' : 'offline'}`} />{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span></div></header>
     <main>
-      <section className="intro"><div><div className="eyebrow intro-eyebrow"><Sprite data={STAR} size={2} className="little-star" /> SMALL NOTES. A SHARED LITTLE WORLD.</div><h1>Every thought has <em>a place.</em></h1></div><p>Leave a note. Watch Jev find it a home. <br />A tiny mailroom, open to everyone.</p></section>
+      <section className="intro"><h1>Every thought has <em>a place.</em></h1><p>Leave a note. Watch Jev find it a home.</p></section>
       <div className="main-layout">
         <section className="mailroom" aria-label="Shared live mailroom">
           <div className="bezel">
@@ -236,26 +236,23 @@ export default function App() {
           </div>
           <Dialogue line={active ? active.reaction : room ? 'Got a note for me? I’ll find it a home!' : 'Just opening up the mailroom…'} />
           {roomError && <div className="connection-warning" role="status">{roomError}</div>}
-          <div className="bins-heading"><span className="eyebrow">A PLACE FOR EVERYTHING</span><span>Open a bin. Have a look. <Arrow down /></span></div>
-          <div className="bin-grid">{CATEGORIES.map((category, i) => <button key={category} className="bin-card" onClick={() => openBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
-            <span className="bin-card-top"><span className="bin-icon"><Sprite data={BIN_ICONS[category]} size={4} /></span><span className="bin-number">No.{i + 1}</span></span>
+          <div className="bin-grid">{CATEGORIES.map(category => <button key={category} className="bin-card" onClick={() => openBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
+            <span className="bin-icon"><Sprite data={BIN_ICONS[category]} size={4} /></span>
             <span className="bin-label"><Sprite data={ARROW} size={2} className="bin-cursor" />{BIN_META[category].label}</span><span className="bin-count">{countLabel(room?.counts[category] || 0)}</span>
           </button>)}</div>
         </section>
         <aside className="compose-column">
-          <section className="composer"><div className="composer-stamp"><EnvelopeIcon /><span>TO: JEV<br />WITH THOUGHT</span></div><span className="eyebrow">GOT SOMETHING ON YOUR MIND?</span><h2>Send a little note.</h2><p>A kind word, a bright idea, a small complaint. Jev knows just the place.</p>
+          <section className="composer"><h2>Send a little note.</h2>
             <form onSubmit={send}><label htmlFor="message" className="sr-only">Your message to Jev</label><div className="textarea-wrap"><textarea id="message" ref={textarea} value={text} onChange={event => setText(event.target.value)} placeholder={"Dear Jev,\nI’ve been thinking…"} maxLength={280} rows={5} required disabled={sending} aria-describedby="public-note character-count" /><span id="character-count" className={text.length > 260 ? 'character-count near-limit' : 'character-count'}>{text.length}<span> / 280</span></span></div>
-              <button className="send-button" type="submit" disabled={!text.trim() || sending}><span className="a-button" aria-hidden="true">A</span>{sending ? 'Handing it to Jev…' : 'Send to Jev'}</button><p className="public-note" id="public-note"><Sprite data={EXCLAIM} size={2} /> Accepted notes are public. Leave out personal details.</p>{sendError && <p className="inline-error" role="alert">{sendError}</p>}
+              <button className="send-button" type="submit" disabled={!text.trim() || sending}>{sending ? 'Handing it to Jev…' : 'Send to Jev'}</button><p className="public-note" id="public-note"><Sprite data={EXCLAIM} size={2} /> Accepted notes are public. Leave out personal details.</p>{sendError && <p className="inline-error" role="alert">{sendError}</p>}
             </form>
           </section>
-          {receipts[0] ? <Receipt receipt={receipts[0]} openBin={openBin} /> : <div className="first-note"><Sprite data={ARROW} size={3} className="doodle-arrow" /><p>A real little moment.<br /><span>Everyone here sees the same Jev.</span></p></div>}
-          <div className="postscript"><span className="ps-label">P.S.</span><p>Even Jev has a trash can. Notes that don’t belong in a public space get a little toss.</p></div>
+          {receipts[0] && <Receipt receipt={receipts[0]} openBin={openBin} />}
         </aside>
       </div>
-      <section className="how-it-works" id="how-it-works"><div className="how-intro"><span className="eyebrow">ONE ROOM. EVERYONE’S NOTES.</span><h2>A little order <br />in the everyday.</h2></div><div className="how-step"><span>01 / DROP A NOTE</span><p>Something lovely? Something broken? Something you just thought of? Put it in an envelope.</p></div><div className="how-step"><span>02 / LEAVE IT WITH JEV</span><p>Our resident sorter reads each note, picks a bin, and carries it over. You get to watch.</p></div><div className="how-step"><span>03 / PEEK INSIDE</span><p>Every bin is a growing collection of thoughts. Open one and see what’s on everyone’s mind.</p></div></section>
       {room?.mode === 'demo' && <div className="demo-notice"><span>DEMO MODE</span> Jev is using local sorting rules. Connect OpenRouter to give him AI-powered judgment.</div>}
     </main>
-    <footer className="site-footer"><span>Made for the things on your mind.</span><span>{total} notes filed with care <Sprite data={BIN_ICONS.compliments} size={2} className="footer-flower" /></span></footer>
+    <footer className="site-footer"><span>{total} notes filed with care <Sprite data={BIN_ICONS.compliments} size={2} className="footer-flower" /></span></footer>
     {selection.category && <HistoryPanel category={selection.category} highlight={selection.message} room={room} onSelect={openBin} onClose={closeBin} />}
   </div>;
 }
