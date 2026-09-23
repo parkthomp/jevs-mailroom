@@ -11,6 +11,11 @@ type Point = readonly [number, number];
 const DESK: Point = [160, 108], PICKUP: Point = [80, 116], TRASH: Point = [262, 122];
 const TO_TRAY: Point[] = [DESK, [PICKUP[0], DESK[1]], PICKUP];
 const FROM_TRAY = [...TO_TRAY].reverse();
+// What Jev announces the moment he picks up a note; the decision was made before he set off.
+const ANNOUNCE: Record<Destination, string> = {
+  compliments: 'FILING THIS COMPLIMENT!', ideas: 'FILING THIS IDEA!', complaints: 'FILING THIS COMPLAINT!',
+  misc: 'FILING THIS UNDER MISC!', trash: 'ANOTHER ONE FOR THE BIN!',
+};
 
 // Jev walks around the desk: out along a side aisle, then across the corridor in front of the bins.
 function route(destination: Destination): Point[] {
@@ -92,6 +97,15 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       hand((time.getHours() % 12 + minutes / 60) / 12, 3);
       hand(minutes / 60, 5);
     };
+    // A speech bubble whose tail tip sits at (tipX, tipY), kept inside the room.
+    const say = (line: string, tipX: number, tipY: number) => {
+      const w = line.length * 4 + 5, h = 11, top = tipY - h - 1, left = Math.max(4, Math.min(W - 4 - w, tipX - Math.floor(w / 2)));
+      rect(left + 1, top, w - 2, h, INK); rect(left, top + 1, w, h - 2, INK); rect(left + 1, top + 1, w - 2, h - 2, PAPER);
+      print(line, left + w / 2, top + 3);
+      const tail = Math.max(left + 2, Math.min(left + w - 4, tipX));
+      rect(tail, top + h - 1, 2, 1, PAPER); rect(tail, top + h, 1, 1, PAPER);
+      rect(tail - 1, top + h, 1, 1, INK); rect(tail + 1, top + h, 1, 1, INK); rect(tail, top + h + 1, 1, 1, INK);
+    };
     const drawRoom = (data: RoomSnapshot | null, mine: string[]) => {
       // Wall, baseboard, and a tiled floor inside a dark frame.
       rect(0, 0, W, H, PAPER);
@@ -138,15 +152,16 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       const { room: data, ownIds: mine, offset } = state.current;
       const now = Date.now() + (offset ?? 0), active = data?.active, reduced = media.matches;
       drawRoom(data, mine);
-      let position = DESK, carrying = false, walking = false, reading = false;
+      let position = DESK, carrying = false, walking = false, announcing = false;
       let flight: { from: Point; to: Point; t: number; arc: number } | null = null;
       if (active) {
         const { startedAt, pickupAt, departAt, endsAt, homeAt = endsAt, destination } = active;
         const arrive = endsAt - (destination === 'trash' ? 750 : 400);
         if (now < pickupAt) { position = along(TO_TRAY, (now - startedAt) / (pickupAt - startedAt)); walking = true; }
         else if (now < departAt) {
-          const back = (now - pickupAt) / Math.max(1, (departAt - pickupAt) * .55);
-          position = along(FROM_TRAY, back); carrying = true; walking = back < 1; reading = back >= 1;
+          // No pause to think: he announces the bin as he grabs the note and heads straight back.
+          const back = (now - pickupAt) / Math.max(1, departAt - pickupAt);
+          position = along(FROM_TRAY, back); carrying = true; walking = back < 1; announcing = true;
         } else if (now < endsAt) {
           const walk = (now - departAt) / Math.max(1, arrive - departAt);
           position = along(route(destination), walk); carrying = walk < 1; walking = walk < 1;
@@ -157,23 +172,19 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
           const home = (now - endsAt) / Math.max(1, homeAt - endsAt);
           position = along([...route(destination)].reverse(), home); walking = home < 1;
         }
-        if (reduced) { position = now < departAt || now >= endsAt ? DESK : route(destination).at(-1)!; walking = false; reading = now >= pickupAt && now < departAt; flight = null; }
+        if (reduced) { position = now < departAt || now >= endsAt ? DESK : route(destination).at(-1)!; walking = false; flight = null; }
       }
       const step = walking && !reduced && Math.floor(time / 140) % 2 === 1;
       const x = Math.round(position[0]), y = Math.round(position[1]), bob = step ? 1 : 0;
       rect(x - 5, y - 2, 10, 3, LIGHT);
       sprite(step ? JEV_STEP : JEV_STAND, x - 6, y - 16 - bob);
-      if (reading) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 8);
-      else if (carrying) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
+      if (carrying) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
       if (flight && flight.t < 1) {
         const t = Math.max(0, flight.t);
         sprite(ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
       }
-      if (!active || reading) {
-        sprite(BUBBLE, x + 4, y - 27);
-        if (reading) { const dots = reduced ? 3 : 1 + Math.floor(time / 300) % 3; for (let i = 0; i < dots; i++) rect(x + 7 + i * 2, y - 23, 1, 1, INK); }
-        else sprite(HEART_SMALL, x + 7, y - 25);
-      }
+      if (active && announcing) say(ANNOUNCE[active.destination], x, y - 25 - bob);
+      else if (!active) { sprite(BUBBLE, x + 4, y - 27); sprite(HEART_SMALL, x + 7, y - 25); }
       // Exposes Jev's position for end-to-end checks; updated only when it changes.
       if (el.dataset.jevX !== String(x)) el.dataset.jevX = String(x);
       raf = window.requestAnimationFrame(draw);
