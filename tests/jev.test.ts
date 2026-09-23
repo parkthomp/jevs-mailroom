@@ -56,7 +56,7 @@ test('a sorted note is sprinted straight from the tray to its bin, filed, and fo
   const rest = legs.at(-1)!;
   assert.equal(rest.kind, 'rest');
   assert.equal(rest.to! - rest.from, PAUSE);
-  assert.match(rest.say!, /^FILED IN \d+\.\dS!$/);
+  assert.equal(rest.say, undefined, 'no bubble during the pause');
   assert.equal(message.status, 'delivering');
   assert.deepEqual({ endsAt: state.active!.endsAt, doneAt: state.active!.doneAt }, { endsAt: rest.from, doneAt: rest.to });
 
@@ -85,7 +85,6 @@ test('a note waiting after the pause gets a dash from the bin, not from the desk
   assert.deepEqual(dash.path.at(-1), TRAY);
   assert.equal(state.active!.id, 'b');
   assert.equal(state.jev!.find(leg => leg.carrying === 'b' && leg.kind === 'run')!.say, 'ANOTHER ONE FOR THE BIN!');
-  assert.match(state.jev!.at(-1)!.say!, /^TOSSED IN/);
 });
 
 test('a new note interrupts the stroll home, and Jev runs from wherever he is', () => {

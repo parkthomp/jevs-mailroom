@@ -74,10 +74,9 @@ export function planJev(state: State, now: number, pauseMs: number): boolean {
     }
     const destination = ready.decision.destination, drop = dropPoint(destination), say = ANNOUNCE[destination];
     const carry = travel('run', TRAY, drop, start, { carrying: ready.id, destination, say })!;
-    const landed = carry.to! + (destination === 'trash' ? DROP_MS.trash : DROP_MS.bin), seconds = (landed - ready.createdAt) / 1000;
-    const done = destination === 'trash' ? 'TOSSED' : 'FILED';
+    const landed = carry.to! + (destination === 'trash' ? DROP_MS.trash : DROP_MS.bin);
     legs.push(carry, { kind: 'drop', path: [drop], from: carry.to!, to: landed, carrying: ready.id, destination, say },
-      { kind: 'rest', path: [drop], from: landed, to: landed + pauseMs, say: seconds < 60 ? `${done} IN ${seconds.toFixed(1)}S!` : `${done}!` });
+      { kind: 'rest', path: [drop], from: landed, to: landed + pauseMs });
     state.active = { id: ready.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : ready.decision.reaction, endsAt: landed, doneAt: landed + pauseMs };
     ready.status = destination === 'trash' ? 'discarding' : 'delivering';
   } else if (incoming.length) {

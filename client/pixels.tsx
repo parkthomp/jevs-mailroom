@@ -31,19 +31,6 @@ export const ENVELOPE: SpriteData = ['00000000', '00333300', '03033030', '033003
 // The sender's own envelope is shaded so they can pick it out on the trolley.
 export const ENVELOPE_OWN: SpriteData = ENVELOPE.map(row => row.replaceAll('3', '2'));
 
-export const BUBBLE: SpriteData = [
-  '.000000000.',
-  '03333333330',
-  '03333333330',
-  '03333333330',
-  '03333333330',
-  '03333333330',
-  '03333333330',
-  '.030000000.',
-  '.00........',
-];
-export const HEART_SMALL: SpriteData = ['.0.0.', '00000', '.000.', '..0..'];
-
 export const BIN_ICONS: Record<Category, SpriteData> = {
   compliments: ['.00.00.', '0000000', '0000000', '0000000', '.00000.', '..000..', '...0...'],
   ideas: ['..000..', '.03000.', '.00000.', '.00000.', '..000..', '.......', '..000..'],

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { BIN_META, CATEGORIES, type Category, type Point, type RoomSnapshot } from '../shared/protocol';
-import { BIN_X, DESK, jevAt, samePoint } from '../shared/walk';
-import { BIN_ICONS, BUBBLE, ENVELOPE, ENVELOPE_OWN, FONT, HEART_SMALL, JEV_STAND, JEV_STEP, PALETTE, PLANT, type SpriteData } from './pixels';
+import { BIN_X, jevAt } from '../shared/walk';
+import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, JEV_STAND, JEV_STEP, PALETTE, PLANT, type SpriteData } from './pixels';
 
 // A handheld-sized room, scaled up with crisp pixels.
 const W = 320, H = 160;
@@ -152,7 +152,6 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
         sprite(leg?.carrying && mine.includes(leg.carrying) ? ENVELOPE_OWN : ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
       }
       if (leg?.say) say(leg.say, x, y - 25 - bob, y);
-      else if (!leg && samePoint(point, DESK)) { sprite(BUBBLE, x + 4, y - 27); sprite(HEART_SMALL, x + 7, y - 25); }
       // Exposes Jev's position for end-to-end checks; updated only when it changes.
       if (el.dataset.jevX !== String(x)) el.dataset.jevX = String(x);
       raf = window.requestAnimationFrame(draw);
