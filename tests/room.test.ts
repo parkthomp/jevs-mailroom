@@ -23,7 +23,7 @@ test('private submissions and discarded content never appear in public history o
     message('checking', { text: 'PRIVATE_UNREVIEWED', status: 'pending_review', decision: undefined }),
     message('trash', { text: 'PRIVATE_DISCARDED', status: 'discarded', decision: { destination: 'trash', reaction: 'PRIVATE_REACTION', reason: 'PRIVATE_REASON' } }),
   ]);
-  state.active = { id: 'trash', destination: 'trash', reaction: 'PRIVATE_REACTION', startedAt: 1, pickupAt: 2, arriveAt: 3, endsAt: 4, homeAt: 4 };
+  state.active = { id: 'trash', destination: 'trash', reaction: 'PRIVATE_REACTION', endsAt: 4, doneAt: 4 };
   const room = snapshot(state, 2, 'demo');
   assert.equal(room.counts.ideas, 1);
   assert.equal(room.recent.length, 1);

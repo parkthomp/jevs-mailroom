@@ -62,38 +62,45 @@ test('mobile and reduced-motion visitors can open every bin without horizontal o
   } finally { await context.close(); }
 });
 
-test('Jev keeps walking to his destination while the room snapshot stays unchanged', async ({ page, request }) => {
-  // Regression guard: the canvas re-anchored its server-clock offset on every parent render,
-  // which pinned "now" to the last snapshot and left Jev stalling mid-walk.
+test('Jev sprints a note to the trash, pauses, and strolls back to his desk', async ({ page, request }) => {
+  // The canvas draws Jev from the planned legs on its own clock, so he keeps moving between snapshots.
   await page.goto('/');
   await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 80; i++) {
     const room = await (await request.get('/api/room')).json();
-    if (!room.active && !room.queue.length) break;
-    await page.waitForTimeout(500);
+    if (!room.active && !room.queue.length && room.jev.every((leg: { to: number | null }) => leg.to !== null && leg.to < Date.now())) break;
+    await page.waitForTimeout(250);
   }
-  await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(`[trash] walk fixture ${Date.now()}`);
+  type Leg = { kind: string; from: number; to: number; carrying?: string };
+  const sentAt = Date.now();
+  await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(`[trash] sprint fixture ${Date.now()}`);
   await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
-  let active: { destination: string; endsAt: number; homeAt: number } | null = null;
-  for (let i = 0; i < 100 && !active; i++) {
-    active = (await (await request.get('/api/room')).json()).active;
-    if (!active) await page.waitForTimeout(100);
+  let legs: Leg[] = [];
+  for (let i = 0; i < 100; i++) {
+    const room = await (await request.get('/api/room')).json();
+    if (room.active?.destination === 'trash') { legs = room.jev; break; }
+    await page.waitForTimeout(50);
   }
-  expect(active?.destination).toBe('trash');
-  // The canvas reports where it drew Jev, in room pixels (the room is 320 wide).
+  const carry = legs.find(leg => leg.kind === 'run' && leg.carrying)!, rest = legs.find(leg => leg.kind === 'rest')!;
+  expect(rest.from - sentAt).toBeLessThan(3500);
+  // The canvas reports where it drew Jev, in room pixels (desk at x 160, trash at x 262).
   const jevX = async () => Number(await page.locator('canvas').getAttribute('data-jev-x'));
-  const atStart = await jevX();
-  await page.waitForTimeout(Math.max(0, active!.endsAt - Date.now() - 250));
-  const atEnd = await jevX();
-  expect(atStart).toBeGreaterThan(0);
-  // The trash can sits on the far right; a frozen clock would leave Jev by the desk or the tray.
-  expect(atEnd).toBeGreaterThan(224);
-  expect(atEnd).toBeGreaterThan(atStart);
-  // After the toss he walks back to his desk (x 160) instead of reappearing there.
-  await page.waitForTimeout(Math.max(0, (active!.endsAt + active!.homeAt) / 2 - Date.now()));
+  const at = (time: number) => page.waitForTimeout(Math.max(0, time - Date.now()));
+  await at(carry.from + (carry.to - carry.from) * .6);
+  const midSprint = await jevX();
+  expect(midSprint).toBeGreaterThan(80);
+  expect(midSprint).toBeLessThan(262);
+  await at(rest.from + 200);
+  expect(await jevX()).toBe(262);
+  let stroll: Leg | undefined;
+  for (let i = 0; i < 100 && !stroll; i++) {
+    stroll = ((await (await request.get('/api/room')).json()).jev as Leg[]).find(leg => leg.kind === 'walk' && leg.from >= rest.to);
+    if (!stroll) await page.waitForTimeout(100);
+  }
+  await at((stroll!.from + stroll!.to) / 2);
   const midway = await jevX();
-  expect(midway).toBeGreaterThan(170);
-  expect(midway).toBeLessThan(atEnd);
-  await page.waitForTimeout(Math.max(0, active!.homeAt - Date.now() + 500));
+  expect(midway).toBeGreaterThan(160);
+  expect(midway).toBeLessThan(262);
+  await at(stroll!.to + 300);
   expect(await jevX()).toBe(160);
 });

@@ -18,14 +18,14 @@ async function eventually(check: () => Promise<boolean>, timeout = 8000) {
 
 test('worker sorts valid criticism, discards privately, and recovers an unfinished delivery once', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'jev-engine-test-'));
-  const keys = ['DATA_FILE', 'DATABASE_URL', 'REDIS_URL', 'AI_MODE', 'NODE_ENV', 'DELIVERY_DURATION_MS', 'DAILY_AI_LIMIT'] as const;
+  const keys = ['DATA_FILE', 'DATABASE_URL', 'REDIS_URL', 'AI_MODE', 'NODE_ENV', 'JEV_PAUSE_MS', 'DAILY_AI_LIMIT'] as const;
   const old = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   process.env.DATA_FILE = join(directory, 'state.json');
   delete process.env.DATABASE_URL;
   delete process.env.REDIS_URL;
   process.env.AI_MODE = 'demo';
   process.env.NODE_ENV = 'test';
-  process.env.DELIVERY_DURATION_MS = '150';
+  process.env.JEV_PAUSE_MS = '50';
   process.env.DAILY_AI_LIMIT = '100';
   let store = new Store();
   let stop: (() => Promise<void>) | undefined;
@@ -37,7 +37,7 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
     await eventually(async () => {
       const state = await store.read();
       return progress(state, complaint.id, complaint.token).status === 'delivered' && progress(state, discarded.id, discarded.token).status === 'discarded';
-    });
+    }, 15000);
     const room = snapshot(await store.read(), 1, 'demo');
     assert.equal(room.counts.complaints, 1);
     assert.equal(room.recent.length, 1);
@@ -49,7 +49,7 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
       const item = state.messages.find(item => item.id === recovery.id)!;
       item.status = 'delivering';
       item.decision = { destination: 'ideas', reaction: 'Saved for later!' };
-      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', startedAt: 1, pickupAt: 2, arriveAt: 3, endsAt: 4, homeAt: 4 };
+      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', endsAt: 4, doneAt: 4 };
       state.version++;
     });
     await store.close();

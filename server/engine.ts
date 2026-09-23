@@ -3,7 +3,7 @@ import { Redis } from 'ioredis';
 import type pg from 'pg';
 import { decideMessage, aiMode } from './ai.js';
 import { TRASH_REACTION } from './room.js';
-import { deliveryTimeline } from '../shared/walk.js';
+import { planJev } from './jev.js';
 import type { Store } from './store.js';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -110,26 +110,7 @@ export async function startEngine(store: Store) {
                 message.status = 'failed'; message.nextAttemptAt = now; message.reason = 'Jev is picking up your saved message after a restart.'; state.version++;
               }
             }
-            if (state.active && state.active.endsAt <= now) {
-              const message = state.messages.find(item => item.id === state.active!.id);
-              if (message && ['delivering', 'discarding'].includes(message.status)) {
-                message.status = state.active.destination === 'trash' ? 'discarded' : 'delivered';
-                message.deliveredAt = state.active.endsAt; state.version++;
-              }
-              // The envelope is filed at endsAt; the next one waits until Jev has walked back to his desk
-              // (deliveries saved before homeAt existed end at endsAt).
-              if ((state.active.homeAt ?? state.active.endsAt) <= now) { state.active = null; state.version++; }
-            }
-            if (!state.active) {
-              const message = state.messages.find(item => ['ready', 'ready_to_discard'].includes(item.status));
-              if (message?.decision) {
-                const duration = Math.max(100, Number(process.env.DELIVERY_DURATION_MS || 6500));
-                const destination = message.decision.destination;
-                state.active = { id: message.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : message.decision.reaction,
-                  ...deliveryTimeline(destination, now, duration) };
-                message.status = destination === 'trash' ? 'discarding' : 'delivering'; state.version++;
-              }
-            }
+            planJev(state, now, Math.max(0, Number(process.env.JEV_PAUSE_MS ?? 2500)));
           });
           const state = await store.read();
           const candidates = state.messages.filter(item => ['pending_review', 'failed'].includes(item.status) && item.nextAttemptAt <= Date.now());

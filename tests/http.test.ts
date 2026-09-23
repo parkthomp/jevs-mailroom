@@ -37,7 +37,7 @@ test('HTTP + WebSockets share a durable room and never disclose a discarded mess
   const directory = await mkdtemp(join(tmpdir(), 'jev-http-test-'));
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, PORT: String(port), DATA_FILE: join(directory, 'state.json'), AI_MODE: 'demo', NODE_ENV: 'test', DELIVERY_DURATION_MS: '150', DATABASE_URL: '', REDIS_URL: '', RECEIPT_SECRET: 'integration-test-secret-that-is-not-used-elsewhere' };
+  const env = { ...process.env, PORT: String(port), DATA_FILE: join(directory, 'state.json'), AI_MODE: 'demo', NODE_ENV: 'test', JEV_PAUSE_MS: '0', DATABASE_URL: '', REDIS_URL: '', RECEIPT_SECRET: 'integration-test-secret-that-is-not-used-elsewhere' };
   let output = '';
   const start = () => {
     const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'] });

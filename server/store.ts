@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import pg from 'pg';
-import type { ActiveDelivery, JevDecision, SubmissionStatus } from '../shared/protocol.js';
+import type { ActiveDelivery, JevDecision, JevLeg, SubmissionStatus } from '../shared/protocol.js';
 
 export interface StoredMessage {
   id: string; text: string; submissionId: string; tokenHash: string;
@@ -11,9 +11,10 @@ export interface StoredMessage {
 }
 export interface State {
   version: number; messages: StoredMessage[]; active: ActiveDelivery | null;
+  jev?: JevLeg[]; // Absent in rooms saved before Jev planned his own route.
   budget: { date: string; calls: number };
 }
-const empty = (): State => ({ version: 1, messages: [], active: null, budget: { date: '', calls: 0 } });
+const empty = (): State => ({ version: 1, messages: [], active: null, jev: [], budget: { date: '', calls: 0 } });
 export class Store {
   readonly pool: pg.Pool | undefined;
   private state = empty();

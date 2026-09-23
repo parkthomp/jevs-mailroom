@@ -1,31 +1,38 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CATEGORIES, type Destination } from '../shared/protocol.js';
-import { DESK, PICKUP, deliveryTimeline, pathLength, toDesk, toDestination } from '../shared/walk.js';
+import { CATEGORIES, type Destination, type Point } from '../shared/protocol.js';
+import { DESK, dropPoint, jevAt, pathLength, route, TRAY } from '../shared/walk.js';
 
 const destinations: Destination[] = [...CATEGORIES, 'trash'];
+const spots: Point[] = [DESK, TRAY, ...destinations.map(dropPoint), [212, 80], [110, 70], [186, 108]];
+// Jev's desk in feet coordinates, as in shared/walk.ts.
+const throughDesk = (a: Point, b: Point) => Math.max(a[0], b[0]) >= 128 && Math.min(a[0], b[0]) <= 192 && Math.max(a[1], b[1]) >= 57 && Math.min(a[1], b[1]) <= 86;
 
-test('Jev carries a note straight from the tray to its destination, then walks home', () => {
-  for (const destination of destinations) {
-    const outbound = toDestination(destination), home = toDesk(destination);
-    assert.deepEqual(outbound[0], PICKUP);
-    assert.ok(!outbound.some(([x, y]) => x === DESK[0] && y === DESK[1]), `${destination} detours past the desk`);
-    assert.deepEqual(home[0], outbound.at(-1));
-    assert.deepEqual(home.at(-1), DESK);
+test('routes between any two spots go around the desk, with right-angled steps', () => {
+  for (const from of spots) for (const to of spots) {
+    const path = route(from, to);
+    assert.deepEqual(path[0], from);
+    assert.deepEqual(path.at(-1), to);
+    for (let i = 1; i < path.length; i++) {
+      assert.ok(path[i][0] === path[i - 1][0] || path[i][1] === path[i - 1][1], `diagonal step in ${JSON.stringify(path)}`);
+      assert.ok(!throughDesk(path[i - 1], path[i]), `${JSON.stringify(path)} cuts through the desk`);
+    }
   }
 });
 
-test('deliveries keep one pace, so shorter trips finish sooner and the longest drops at the duration', () => {
-  const timelines = destinations.map(destination => ({ destination, ...deliveryTimeline(destination, 1000, 6500) }));
-  const pace = (from: number, to: number, distance: number) => distance / (to - from);
-  const reference = pace(timelines[0].pickupAt, timelines[0].arriveAt, pathLength(toDestination(timelines[0].destination)));
-  for (const t of timelines) {
-    assert.ok(t.startedAt < t.pickupAt && t.pickupAt < t.arriveAt && t.arriveAt < t.endsAt && t.endsAt < t.homeAt);
-    assert.ok(t.endsAt <= 1000 + 6500 + 1e-6);
-    assert.ok(Math.abs(pace(t.pickupAt, t.arriveAt, pathLength(toDestination(t.destination))) - reference) < 1e-9);
-    assert.ok(Math.abs(pace(t.endsAt, t.homeAt, pathLength(toDesk(t.destination))) - reference) < 1e-9);
+test('notes go straight from the tray to their destination', () => {
+  for (const destination of destinations) {
+    const path = route(TRAY, dropPoint(destination));
+    assert.ok(!path.some(point => point[0] === DESK[0] && point[1] === DESK[1]));
+    assert.ok(pathLength(path) <= 230);
   }
-  assert.equal(Math.max(...timelines.map(t => t.endsAt)), 1000 + 6500);
-  const byDestination = Object.fromEntries(timelines.map(t => [t.destination, t.endsAt]));
-  assert.ok(byDestination.compliments < byDestination.misc);
+});
+
+test('jevAt follows a leg over time and rests where the plan ends', () => {
+  const legs = [{ kind: 'run' as const, path: [[0, 0], [100, 0]] as Point[], from: 1000, to: 2000 }, { kind: 'rest' as const, path: [[100, 0]] as Point[], from: 2000, to: 3000 }];
+  assert.deepEqual(jevAt(legs, 500).point, [0, 0]);
+  assert.deepEqual(jevAt(legs, 1500).point, [50, 0]);
+  assert.equal(jevAt(legs, 2500).leg?.kind, 'rest');
+  assert.deepEqual(jevAt(legs, 9000), { point: [100, 0] });
+  assert.deepEqual(jevAt([], 0), { point: DESK });
 });

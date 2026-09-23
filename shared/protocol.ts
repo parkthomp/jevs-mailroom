@@ -19,12 +19,21 @@ export interface ActiveDelivery {
   id: string;
   destination: Destination;
   reaction: string;
-  startedAt: number;
-  // Timed by shared/walk.ts: Jev picks up the note, carries it to its destination, drops it (endsAt), and walks home.
-  pickupAt: number;
-  arriveAt: number;
+  // The note is filed when it lands (endsAt); Jev is free for the next one after his pause (doneAt).
   endsAt: number;
-  homeAt: number;
+  doneAt: number;
+}
+// Where Jev's feet are, in room pixels (the room is 320×160).
+export type Point = readonly [number, number];
+// One stretch of Jev's plan. Legs follow on from each other, and every visitor draws the same ones.
+export interface JevLeg {
+  kind: 'run' | 'walk' | 'wait' | 'drop' | 'rest';
+  path: Point[]; // A single point for wait, drop, and rest.
+  from: number;
+  to: number | null; // null: until something new comes in.
+  carrying?: string; // Id of the envelope in Jev's hands.
+  destination?: Destination;
+  say?: string; // Speech bubble text.
 }
 export interface RoomSnapshot {
   version: number;
@@ -32,6 +41,7 @@ export interface RoomSnapshot {
   counts: Record<Category, number>;
   queue: { id: string }[];
   active: ActiveDelivery | null;
+  jev: JevLeg[];
   recent: PublicMessage[];
   online: number;
   mode: 'demo' | 'live';

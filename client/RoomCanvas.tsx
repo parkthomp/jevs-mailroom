@@ -1,31 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { BIN_META, CATEGORIES, type Category, type Destination, type RoomSnapshot } from '../shared/protocol';
-import { BIN_X, DESK, type Point, TO_TRAY, toDesk, toDestination } from '../shared/walk';
+import { BIN_META, CATEGORIES, type Category, type Point, type RoomSnapshot } from '../shared/protocol';
+import { BIN_X, DESK, jevAt, samePoint } from '../shared/walk';
 import { BIN_ICONS, BUBBLE, ENVELOPE, ENVELOPE_OWN, FONT, HEART_SMALL, JEV_STAND, JEV_STEP, PALETTE, PLANT, type SpriteData } from './pixels';
 
 // A handheld-sized room, scaled up with crisp pixels.
 const W = 320, H = 160;
 const [INK, DARK, LIGHT, PAPER] = PALETTE;
-// What Jev announces the moment he picks up a note; the decision was made before he set off.
-const ANNOUNCE: Record<Destination, string> = {
-  compliments: 'FILING THIS COMPLIMENT!', ideas: 'FILING THIS IDEA!', complaints: 'FILING THIS COMPLAINT!',
-  misc: 'FILING THIS UNDER MISC!', trash: 'ANOTHER ONE FOR THE BIN!',
-};
-const ANNOUNCE_MS = 1600;
-
-function along(path: readonly Point[], progress: number): Point {
-  const lengths = path.slice(1).map((point, i) => Math.abs(point[0] - path[i][0]) + Math.abs(point[1] - path[i][1]));
-  let remaining = Math.max(0, Math.min(1, progress)) * lengths.reduce((sum, length) => sum + length, 0);
-  for (let i = 0; i < lengths.length; i++) {
-    if (remaining <= lengths[i] || i === lengths.length - 1) {
-      const f = lengths[i] ? Math.min(1, remaining / lengths[i]) : 1, a = path[i], b = path[i + 1];
-      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-    }
-    remaining -= lengths[i];
-  }
-  return path[path.length - 1];
-}
-
 export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnapshot | null; ownIds: string[]; onSelect: (category: Category) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const state = useRef<{ room: RoomSnapshot | null; ownIds: string[]; offset: number | null }>({ room, ownIds, offset: null });
@@ -98,7 +78,7 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       rect(tail, edge, 2, 1, PAPER); rect(tail, edge + out, 1, 1, PAPER);
       rect(tail - 1, edge + out, 1, 1, INK); rect(tail + 1, edge + out, 1, 1, INK); rect(tail, edge + 2 * out, 1, 1, INK);
     };
-    const drawRoom = (data: RoomSnapshot | null, mine: string[]) => {
+    const drawRoom = (data: RoomSnapshot | null, mine: string[], tray: { id: string }[]) => {
       // Wall, baseboard, and a tiled floor inside a dark frame.
       rect(0, 0, W, H, PAPER);
       rect(0, 0, W, 38, LIGHT);
@@ -132,7 +112,7 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       // Incoming trolley with the waiting envelopes.
       rect(22, 98, 46, 12, INK); rect(24, 100, 42, 6, DARK); rect(24, 106, 42, 2, LIGHT);
       rect(26, 110, 2, 10, INK); rect(62, 110, 2, 10, INK); rect(24, 120, 6, 3, INK); rect(60, 120, 6, 3, INK);
-      (data?.queue || []).slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 99 - Math.floor(i / 4) * 4));
+      tray.slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 99 - Math.floor(i / 4) * 4));
       print('INCOMING', 45, 126);
       // Trash can.
       rect(279, 96, 6, 2, INK); rect(272, 98, 20, 3, INK); rect(274, 101, 16, 20, INK); rect(276, 101, 12, 18, DARK);
@@ -142,42 +122,37 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
     };
     const draw = (time: number) => {
       const { room: data, ownIds: mine, offset } = state.current;
-      const now = Date.now() + (offset ?? 0), active = data?.active, reduced = media.matches;
-      drawRoom(data, mine);
-      let position = DESK, carrying = false, walking = false, announcing = false;
+      const now = Date.now() + (offset ?? 0), reduced = media.matches, legs = data?.jev ?? [];
+      // A note Jev is on his way to grab still sits on the trolley until he gets there.
+      const unclaimed = legs.filter(leg => leg.kind === 'run' && leg.carrying && leg.from > now).map(leg => ({ id: leg.carrying! }));
+      drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])]);
+      const { point, leg } = jevAt(legs, now);
+      const moving = !!leg && (leg.kind === 'run' || leg.kind === 'walk'), running = leg?.kind === 'run';
+      const position = reduced && moving ? leg.path.at(-1)! : point;
+      const held = leg?.carrying && leg.kind !== 'drop' ? leg.carrying : undefined;
       let flight: { from: Point; to: Point; t: number; arc: number } | null = null;
-      if (active) {
-        const { startedAt, pickupAt, endsAt, destination } = active;
-        // Deliveries saved before the current timeline lack these; they just end at endsAt.
-        const arriveAt = active.arriveAt ?? endsAt, homeAt = active.homeAt ?? endsAt;
-        const outbound = toDestination(destination), drop = outbound[outbound.length - 1];
-        if (now < pickupAt) { position = along(TO_TRAY, (now - startedAt) / Math.max(1, pickupAt - startedAt)); walking = true; }
-        else if (now < arriveAt) {
-          // No detour past the desk: straight from the tray to where the note goes.
-          position = along(outbound, (now - pickupAt) / Math.max(1, arriveAt - pickupAt)); carrying = true; walking = true;
-        } else if (now < endsAt) {
-          // Toss over the can's rim, or drop through the bin's slot.
-          position = drop;
-          flight = { from: [drop[0] - 4, drop[1] - 23], to: destination === 'trash' ? [278, 92] : [drop[0] - 4, 20], t: (now - arriveAt) / Math.max(1, endsAt - arriveAt), arc: destination === 'trash' ? 16 : 4 };
-        } else {
-          const home = (now - endsAt) / Math.max(1, homeAt - endsAt);
-          position = along(toDesk(destination), home); walking = home < 1;
-        }
-        // He announces the destination the moment he grabs the note.
-        announcing = now >= pickupAt && now < Math.min(endsAt, pickupAt + ANNOUNCE_MS);
-        if (reduced) { position = now >= arriveAt && now < endsAt ? drop : DESK; walking = false; flight = null; }
+      if (leg?.kind === 'drop' && leg.to !== null && !reduced) {
+        // Toss over the can's rim, or drop through the bin's slot.
+        const [dx, dy] = leg.path[0], trash = leg.destination === 'trash';
+        flight = { from: [dx - 4, dy - 23], to: trash ? [278, 92] : [dx - 4, 20], t: (now - leg.from) / Math.max(1, leg.to - leg.from), arc: trash ? 16 : 4 };
       }
-      const step = walking && !reduced && Math.floor(time / 140) % 2 === 1;
+      const step = moving && !reduced && Math.floor(time / (running ? 70 : 140)) % 2 === 1;
       const x = Math.round(position[0]), y = Math.round(position[1]), bob = step ? 1 : 0;
+      if (running && !reduced) {
+        // Speed lines trailing behind a sprint.
+        const before = jevAt(legs, now - 40).point, dx = Math.sign(Math.round(position[0] - before[0])), dy = Math.sign(Math.round(position[1] - before[1]));
+        if (dx) for (const [oy, length] of [[-12, 4], [-8, 6], [-4, 4]]) rect(dx > 0 ? x - 8 - length : x + 8, y + oy, length, 1, DARK);
+        else if (dy) for (const [ox, length] of [[-4, 3], [0, 5], [4, 3]]) rect(x + ox, dy > 0 ? y - 18 - length : y + 2, 1, length, DARK);
+      }
       rect(x - 5, y - 2, 10, 3, LIGHT);
       sprite(step ? JEV_STEP : JEV_STAND, x - 6, y - 16 - bob);
-      if (carrying) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
+      if (held) sprite(mine.includes(held) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
       if (flight && flight.t < 1) {
         const t = Math.max(0, flight.t);
-        sprite(ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
+        sprite(leg?.carrying && mine.includes(leg.carrying) ? ENVELOPE_OWN : ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
       }
-      if (active && announcing) say(ANNOUNCE[active.destination], x, y - 25 - bob, y);
-      else if (!active) { sprite(BUBBLE, x + 4, y - 27); sprite(HEART_SMALL, x + 7, y - 25); }
+      if (leg?.say) say(leg.say, x, y - 25 - bob, y);
+      else if (!leg && samePoint(point, DESK)) { sprite(BUBBLE, x + 4, y - 27); sprite(HEART_SMALL, x + 7, y - 25); }
       // Exposes Jev's position for end-to-end checks; updated only when it changes.
       if (el.dataset.jevX !== String(x)) el.dataset.jevX = String(x);
       raf = window.requestAnimationFrame(draw);

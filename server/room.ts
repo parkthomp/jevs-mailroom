@@ -18,6 +18,7 @@ export function snapshot(state: State, online: number, mode: 'demo' | 'live'): R
   return { version: state.version, serverTime: Date.now(), counts, online, mode,
     queue: state.messages.filter(message => pending(message) && message.id !== state.active?.id).map(({ id }) => ({ id })),
     active: state.active ? { ...state.active, reaction: state.active.destination === 'trash' ? TRASH_REACTION : state.active.reaction } : null,
+    jev: state.jev ?? [],
     recent: messages.sort((a, b) => b.deliveredAt - a.deliveredAt).slice(0, 8) };
 }
 export async function submit(store: Store, text: string, submissionId: string): Promise<SubmissionReceipt> {
