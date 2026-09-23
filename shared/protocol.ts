@@ -20,11 +20,11 @@ export interface ActiveDelivery {
   destination: Destination;
   reaction: string;
   startedAt: number;
+  // Timed by shared/walk.ts: Jev picks up the note, carries it to its destination, drops it (endsAt), and walks home.
   pickupAt: number;
-  departAt: number;
+  arriveAt: number;
   endsAt: number;
-  // When Jev is back at his desk after the drop. Absent on deliveries saved before the walk back existed.
-  homeAt?: number;
+  homeAt: number;
 }
 export interface RoomSnapshot {
   version: number;

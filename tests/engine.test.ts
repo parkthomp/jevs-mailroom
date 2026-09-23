@@ -49,7 +49,7 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
       const item = state.messages.find(item => item.id === recovery.id)!;
       item.status = 'delivering';
       item.decision = { destination: 'ideas', reaction: 'Saved for later!' };
-      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', startedAt: 1, pickupAt: 2, departAt: 3, endsAt: 4 };
+      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', startedAt: 1, pickupAt: 2, arriveAt: 3, endsAt: 4, homeAt: 4 };
       state.version++;
     });
     await store.close();

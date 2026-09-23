@@ -67,7 +67,7 @@ This can use demo AI while `NODE_ENV` is not `production`, or real OpenRouter cr
 | `SUBMISSIONS_PER_MINUTE` | `5`; per-IP limit |
 | `AI_CONCURRENCY` | `2`; concurrent jobs |
 | `DAILY_AI_LIMIT` | `500`; message processing attempts per day (up to three API calls each), not a dollar spending cap |
-| `DELIVERY_DURATION_MS` | `6500`; shared delivery animation duration |
+| `DELIVERY_DURATION_MS` | `6500`; time from Jev leaving his desk to dropping a note on his longest trip. Shorter trips finish sooner, and he then walks back to his desk before the next note |
 
 ## Deploy on Render
 

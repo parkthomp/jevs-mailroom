@@ -3,6 +3,7 @@ import { Redis } from 'ioredis';
 import type pg from 'pg';
 import { decideMessage, aiMode } from './ai.js';
 import { TRASH_REACTION } from './room.js';
+import { deliveryTimeline } from '../shared/walk.js';
 import type { Store } from './store.js';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -115,7 +116,8 @@ export async function startEngine(store: Store) {
                 message.status = state.active.destination === 'trash' ? 'discarded' : 'delivered';
                 message.deliveredAt = state.active.endsAt; state.version++;
               }
-              // The envelope is filed at endsAt; the next one waits until Jev has walked back to his desk.
+              // The envelope is filed at endsAt; the next one waits until Jev has walked back to his desk
+              // (deliveries saved before homeAt existed end at endsAt).
               if ((state.active.homeAt ?? state.active.endsAt) <= now) { state.active = null; state.version++; }
             }
             if (!state.active) {
@@ -124,7 +126,7 @@ export async function startEngine(store: Store) {
                 const duration = Math.max(100, Number(process.env.DELIVERY_DURATION_MS || 6500));
                 const destination = message.decision.destination;
                 state.active = { id: message.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : message.decision.reaction,
-                  startedAt: now, pickupAt: now + duration * .2, departAt: now + duration * .5, endsAt: now + duration, homeAt: now + duration * 1.4 };
+                  ...deliveryTimeline(destination, now, duration) };
                 message.status = destination === 'trash' ? 'discarding' : 'delivering'; state.version++;
               }
             }
