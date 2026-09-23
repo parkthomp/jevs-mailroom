@@ -96,7 +96,7 @@ AI unit tests mock OpenRouter and do not spend credits. They cover the request s
 
 ## Publication behavior
 
-Accepted messages are public and remain browsable in their bin. The sender’s receipt token reveals private status; it is not part of public room events. Screening considers targeted abuse, exposed personal information or credentials, explicit content, threats, and spam. Ordinary complaints, criticism, and disagreement are publishable. The public trash animation uses fixed text and never exposes the original message or screening explanation.
+Accepted messages are public and remain browsable in their bin. The sender’s receipt token reveals private status; it is not part of public room events. Screening considers targeted abuse, exposed personal information or credentials, explicit content, threats, and spam or junk (ads, scams, gibberish, and empty test notes such as “test”). Ordinary complaints, criticism, and disagreement are publishable. The public trash animation uses fixed text and never exposes the original message or screening explanation.
 
 An operator with access to the app environment can remove a published message by ID:
 

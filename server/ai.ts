@@ -15,7 +15,7 @@ const PRIVATE_REASONS: Record<Hazard, string> = {
   abuse: 'This message contains targeted abuse or hateful content.',
   private_info: 'This message appears to contain private information or credentials.',
   explicit: 'This message contains explicit sexual or graphic content.',
-  spam: 'This message appears to be spam or a scam.',
+  spam: 'This message appears to be spam, a scam, or a test without a real note.',
   threats: 'This message contains threats or encouragement of harm.',
 };
 // Jev reads questions literally, so each hazard is its own narrow yes/no question with explicit criteria.
@@ -32,9 +32,11 @@ const HAZARDS: Record<Hazard, { instructions: string; criteria: { true: string; 
     instructions: 'Does `message` contain explicit sexual content or graphic violence?',
     criteria: { true: 'It is sexually explicit or graphically violent.', false: 'It is suitable for all ages.' },
   },
+  // Tuned against jev-1.13: junk like "test" or "aaaaaaaa" scores ~0.98, while short genuine notes
+  // like "hello" (~0.54) or "you are cool" (~0.37) stay below REJECT_AT.
   spam: {
-    instructions: 'Is `message` spam, a scam, or an advertisement?',
-    criteria: { true: 'It promotes, sells, or tries to trick the reader.', false: 'It is a genuine note to the mailroom.' },
+    instructions: 'Is `message` junk rather than a genuine note to the mailroom? Junk means advertising, scams, gibberish, keyboard mashing, or a test message with no real content.',
+    criteria: { true: 'It is junk: an ad, a scam, random characters, or just a test or filler with nothing to say.', false: 'It is a genuine note with real content, even if short, casual, negative, or a simple greeting.' },
   },
   threats: {
     instructions: 'Does `message` threaten anyone, or encourage anyone to cause harm, including self-harm?',
