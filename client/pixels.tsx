@@ -24,8 +24,48 @@ export const JEV_STAND: SpriteData = [
   '..02200220..',
   '..000..000..',
 ];
-export const JEV_STEP: SpriteData = [...JEV_STAND.slice(0, 14), '...022220...', '...000000...'];
 export const JEV_FACE: SpriteData = JEV_STAND.slice(0, 9);
+// Jev turns to face where he's going, like visitors do: side on, the cap's brim points ahead of him.
+const JEV_LEFT: SpriteData = [
+  '....0000....',
+  '..00111100..',
+  '.0111111110.',
+  '00000000000.',
+  '.0333333330.',
+  '.0303333330.',
+  '.0333333330.',
+  '.0032333330.',
+  '..00333300..',
+  '..01133110..',
+  '.0111111110.',
+  '.0111111110.',
+  '.0311111110.',
+  '..02222220..',
+  '..02200220..',
+  '..000..000..',
+];
+const JEV_BACK: SpriteData = [
+  '....0000....',
+  '..00111100..',
+  '.0111111110.',
+  '.0111111110.',
+  '.0000000000.',
+  '.0333333330.',
+  '.2333333332.',
+  '.0333333330.',
+  '..00333300..',
+  '..01111110..',
+  '.0111111110.',
+  '011111111110',
+  '031111111130',
+  '..02222220..',
+  '..02200220..',
+  '..000..000..',
+];
+const JEV_FACING: Record<Facing, SpriteData> = { down: JEV_STAND, up: JEV_BACK, left: JEV_LEFT, right: JEV_LEFT.map(row => [...row].reverse().join('')) };
+const withStep = (data: SpriteData): SpriteData => [...data.slice(0, 14), '...022220...', '...000000...'];
+const JEV_STEPPING = Object.fromEntries(Object.entries(JEV_FACING).map(([facing, data]) => [facing, withStep(data)])) as Record<Facing, SpriteData>;
+export const jevSprite = (facing: Facing, step: boolean) => (step ? JEV_STEPPING : JEV_FACING)[facing];
 
 // Visitors are a head shorter than Jev. Each wears one of LOOKS outfits: a hairstyle, a hair shade, and
 // a shirt shade. H, S, and P stand for hair, shirt, and trousers until the look fills them in.
@@ -50,7 +90,7 @@ export function visitorSprite(look: number, facing: Facing, step: boolean): Spri
   }
   return sprite;
 }
-// Bobs over your own character, and over Jev when you're close enough to talk.
+// Bobs over your own character.
 export const MARKER: SpriteData = ['00000', '.000.', '..0..'];
 
 export const ENVELOPE: SpriteData = ['00000000', '00333300', '03033030', '03300330', '03333330', '00000000'];

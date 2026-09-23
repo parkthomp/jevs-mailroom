@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { nearby, step, toward } from '../client/player.js';
 import { Presence } from '../server/visitors.js';
-import { BIN_X, DESK, DOOR, walkable } from '../shared/walk.js';
+import { BIN_X, DOOR, walkable } from '../shared/walk.js';
 
 test('visitors stay on the floor and walk around the furniture', () => {
   assert.ok(walkable(DOOR));
@@ -20,13 +20,11 @@ test('visitors stay on the floor and walk around the furniture', () => {
   assert.deepEqual(toward([100, 120], [100, 60], 100), [100, 60]);
 });
 
-test('the bins, the desk, and the trash win the prompt over Jev strolling past', () => {
-  const bin = nearby([BIN_X.ideas, 54], [BIN_X.ideas, 56]);
-  assert.deepEqual(bin?.spot, { kind: 'bin', category: 'ideas' });
-  assert.deepEqual(nearby([45, 132], [80, 116])?.spot, { kind: 'incoming' });
-  assert.deepEqual(nearby([282, 132], [262, 122])?.spot, { kind: 'trash' });
-  assert.deepEqual(nearby([200, 136], [206, 136])?.spot, { kind: 'jev' });
-  assert.equal(nearby([200, 136], DESK), null);
+test('walking up to a bin, the incoming desk, or the trash offers to use it', () => {
+  assert.deepEqual(nearby([BIN_X.ideas, 54])?.spot, { kind: 'bin', category: 'ideas' });
+  assert.deepEqual(nearby([45, 132])?.spot, { kind: 'incoming' });
+  assert.deepEqual(nearby([282, 132])?.spot, { kind: 'trash' });
+  assert.equal(nearby([200, 136]), null, 'nothing to use in the open floor, even with Jev nearby');
 });
 
 test('presence shares well-formed moves only, at a limited rate', () => {

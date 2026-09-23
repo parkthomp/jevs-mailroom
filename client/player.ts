@@ -5,7 +5,7 @@ import { BIN_X, walkable } from '../shared/walk';
 export const SPEED = 72; // Room pixels per second.
 
 // The things in the room you can walk up to and use.
-export type Spot = { kind: 'bin'; category: Category } | { kind: 'incoming' } | { kind: 'trash' } | { kind: 'jev' };
+export type Spot = { kind: 'bin'; category: Category } | { kind: 'incoming' } | { kind: 'trash' };
 interface Box { left: number; right: number; top: number; bottom: number }
 interface Place {
   spot: Spot;
@@ -21,21 +21,16 @@ export const PLACES: Place[] = [
   { spot: { kind: 'incoming' }, zone: box(6, 88, 84, 140), hit: box(18, 72, 86, 124), approach: [45, 132] },
   { spot: { kind: 'trash' }, zone: box(254, 312, 84, 140), hit: box(270, 294, 90, 128), approach: [282, 132] },
 ];
-const jevPlace = (jev: Point): Place => ({ spot: { kind: 'jev' }, zone: box(jev[0] - 18, jev[0] + 18, jev[1] - 18, jev[1] + 18),
-  hit: box(jev[0] - 8, jev[0] + 8, jev[1] - 18, jev[1] + 2), approach: jev });
-const places = (jev: Point) => [jevPlace(jev), ...PLACES];
 const distance = (a: Point, b: Point) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 export const sameSpot = (a: Spot | null, b: Spot | null) => a?.kind === b?.kind && (a?.kind !== 'bin' || a.category === (b as typeof a).category);
 
-// The closest thing you're standing close enough to use. The bins, desk, and trash come first, so
-// Jev wandering past doesn't snatch the prompt away from the bin you walked up to.
-export function nearby(feet: Point, jev: Point): Place | null {
-  const closest = (list: Place[]) => list.filter(place => inside(feet, place.zone)).sort((a, b) => distance(feet, a.approach) - distance(feet, b.approach))[0];
-  return closest(PLACES) ?? closest([jevPlace(jev)]) ?? null;
+// The closest thing you're standing close enough to use.
+export function nearby(feet: Point): Place | null {
+  return PLACES.filter(place => inside(feet, place.zone)).sort((a, b) => distance(feet, a.approach) - distance(feet, b.approach))[0] ?? null;
 }
 // What's under a click, in room pixels.
-export function clicked(point: Point, jev: Point): Place | null {
-  return places(jev).find(place => inside(point, place.hit)) ?? null;
+export function clicked(point: Point): Place | null {
+  return PLACES.find(place => inside(point, place.hit)) ?? null;
 }
 export const canUse = (feet: Point, place: Place) => inside(feet, place.zone);
 

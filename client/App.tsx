@@ -5,19 +5,16 @@ import type { Spot } from './player';
 import RoomCanvas, { type Move, type Pad } from './RoomCanvas';
 
 type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress; seen?: boolean };
-// What's in the text box, and what clears it: walking off, stepping away from what you used, or a few seconds passing.
-type Talk = { speaker: 'JEV' | null; line: string; ends: 'walk' | 'leave' | 'time' };
+// What's in the text box. It clears itself once there's been time to read it, or sooner when you
+// start walking ('walk') or step away from what you used ('leave').
+type Talk = { speaker: 'JEV' | null; line: string; ends?: 'walk' | 'leave' };
+const readingTime = (line: string) => Math.max(4000, 2000 + line.length * 60);
 const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', WELCOME_KEY = 'jevs-mailroom-welcomed-v1';
 // 'failed' is not terminal: the worker keeps retrying it, so the receipt must keep polling.
 const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
 const countLabel = (n: number) => `${n} ${n === 1 ? 'message' : 'messages'}`;
-const JEV_IDLE = [
-  'Got a note for me? Leave it on the INCOMING desk and I’ll find it a home!',
-  'Every note gets a bin. Walk up to one to read what folks have sent.',
-  'Compliments, ideas, complaints, or misc. I sort them all!',
-];
-const PROMPTS: Record<Spot['kind'], string> = { bin: 'Read', incoming: 'Write a note', trash: 'Look in the trash', jev: 'Talk to Jev' };
+const PROMPTS: Record<Spot['kind'], string> = { bin: 'Read', incoming: 'Write a note', trash: 'Look in the trash' };
 const promptFor = (spot: Spot) => spot.kind === 'bin' ? `Read ${BIN_META[spot.category].label}` : PROMPTS[spot.kind];
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -306,8 +303,8 @@ export default function App() {
   const [talk, setTalk] = useState<Talk | null>(() => welcomed() ? null : { speaker: 'JEV', ends: 'walk', line: touch ? 'Welcome in! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.' : 'Welcome in! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.' });
   useEffect(() => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* Private modes just see the welcome each time. */ } }, []);
   useEffect(() => {
-    if (talk?.ends !== 'time') return;
-    const timer = setTimeout(() => setTalk(current => current === talk ? null : current), 7000);
+    if (!talk) return;
+    const timer = setTimeout(() => setTalk(current => current === talk ? null : current), readingTime(talk.line));
     return () => clearTimeout(timer);
   }, [talk]);
   const pad = useRef<Pad>({ held: new Set(), use: false });
@@ -315,6 +312,14 @@ export default function App() {
   const ownIds = receipts.map(receipt => receipt.id);
   const latest = receipts[0], latestStatus = latest?.progress?.status || latest?.status;
   const beacon = latest && latestStatus === 'delivered' && !latest.seen && latest.progress?.category ? latest.progress.category : null;
+  // The receipt stays up while your note is on its way, then tucks itself away a few seconds after it
+  // lands. One already finished on an earlier visit starts hidden.
+  const [receiptHidden, setReceiptHidden] = useState(() => { const first = readReceipts()[0]; return !!first && terminal.has(first.progress?.status || first.status); });
+  useEffect(() => {
+    if (!latestStatus || !terminal.has(latestStatus)) { setReceiptHidden(false); return; }
+    const timer = setTimeout(() => setReceiptHidden(true), 8000);
+    return () => clearTimeout(timer);
+  }, [latest?.id, latestStatus]);
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts.slice(0, 8))); } catch { /* In private storage modes the current session still works. */ } }, [receipts]);
   useEffect(() => {
     let stopped = false;
@@ -335,7 +340,7 @@ export default function App() {
     const active = room?.active;
     if (!active || !ownIds.includes(active.id) || reacted.current.has(active.id)) return;
     reacted.current.add(active.id);
-    setTalk({ speaker: 'JEV', line: active.reaction, ends: 'time' });
+    setTalk({ speaker: 'JEV', line: active.reaction });
   }, [room?.active?.id, ownIds.join(',')]);
   useEffect(() => {
     const pop = () => { const params = new URLSearchParams(location.search); const category = params.get('bin'); setSelection({ category: isCategory(category) ? category : null, message: params.get('message') }); };
@@ -352,19 +357,14 @@ export default function App() {
   const sent = useCallback((receipt: SubmissionReceipt) => {
     setReceipts(current => [receipt, ...current.filter(item => item.id !== receipt.id)].slice(0, 8));
     setOverlay(null);
-    setTalk({ speaker: null, line: 'You drop your note in the INCOMING tray. Jev’s on his way!', ends: 'time' });
+    setTalk({ speaker: null, line: 'You drop your note in the INCOMING tray. Jev’s on his way!' });
   }, []);
   const use = useCallback((spot: Spot | null) => {
     if (!spot) { setTalk(null); return; }
     if (spot.kind === 'bin') openBin(spot.category);
     else if (spot.kind === 'incoming') compose();
-    else if (spot.kind === 'trash') setTalk({ speaker: null, line: 'The trash can. Notes that break the mailroom rules end up in here, and Jev never shows anyone what they said.', ends: 'leave' });
-    else setTalk(current => {
-      const active = room?.active;
-      const line = active ? active.reaction : room?.queue.length ? 'Hang on, I’m reading one right now!' : JEV_IDLE[(JEV_IDLE.indexOf(current?.line ?? '') + 1) % JEV_IDLE.length];
-      return { speaker: 'JEV', line, ends: 'leave' };
-    });
-  }, [openBin, compose, room]);
+    else setTalk({ speaker: null, line: 'The trash can. Notes that break the mailroom rules end up in here, and Jev never shows anyone what they said.', ends: 'leave' });
+  }, [openBin, compose]);
   const walked = useCallback(() => setTalk(current => current?.ends === 'walk' ? null : current), []);
   const nearby = useCallback((spot: Spot | null) => { setNear(spot); setTalk(current => current?.ends === 'leave' ? null : current); }, []);
   const paused = !!overlay || !!selection.category;
@@ -380,7 +380,7 @@ export default function App() {
     </header>
     <div className="hud-notices">
       {touch && dialogue}
-      {latest && <Receipt receipt={latest} openBin={openBin} />}
+      {latest && !receiptHidden && <Receipt receipt={latest} openBin={openBin} />}
       {roomError && <div className="connection-warning" role="status">{roomError}</div>}
     </div>
     {!paused && <div className="hud-bottom">
