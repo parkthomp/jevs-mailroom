@@ -27,19 +27,31 @@ export class Store {
   }
   async init() {
     if (this.pool) {
-      const client = await this.pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query('SELECT pg_advisory_xact_lock(745312905)');
-        await client.query('CREATE TABLE IF NOT EXISTS jev_room (id integer PRIMARY KEY CHECK (id = 1), state jsonb NOT NULL)');
-        await client.query('INSERT INTO jev_room (id, state) VALUES (1, $1) ON CONFLICT DO NOTHING', [JSON.stringify(empty())]);
-        await client.query('COMMIT');
-      } catch (error) { await client.query('ROLLBACK'); throw error; }
-      finally { client.release(); }
-    } else {
-      try { this.state = JSON.parse(await readFile(this.path, 'utf8')) as State; }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      // A freshly created service's private network, or a database that is still starting, can
+      // briefly refuse connections. Wait it out instead of crash-looping and failing the deploy.
+      for (let attempt = 1; ; attempt++) {
+        try { await this.createSchema(this.pool); return; }
+        catch (error) {
+          if (attempt >= 10) throw error;
+          const code = (error as NodeJS.ErrnoException).code || 'error';
+          console.warn(`Database not reachable yet (${code}); retrying in ${attempt * 2}s.`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        }
+      }
     }
+    try { this.state = JSON.parse(await readFile(this.path, 'utf8')) as State; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
+  private async createSchema(pool: pg.Pool) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(745312905)');
+      await client.query('CREATE TABLE IF NOT EXISTS jev_room (id integer PRIMARY KEY CHECK (id = 1), state jsonb NOT NULL)');
+      await client.query('INSERT INTO jev_room (id, state) VALUES (1, $1) ON CONFLICT DO NOTHING', [JSON.stringify(empty())]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
+    finally { client.release(); }
   }
   async read(): Promise<State> {
     if (this.pool) return (await this.pool.query('SELECT state FROM jev_room WHERE id = 1')).rows[0].state as State;
