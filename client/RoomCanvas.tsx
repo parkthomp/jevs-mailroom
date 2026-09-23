@@ -1,16 +1,34 @@
 import { useEffect, useRef } from 'react';
-import { BIN_META, CATEGORIES, type Category, type RoomSnapshot } from '../shared/protocol';
+import { BIN_META, CATEGORIES, type Category, type Destination, type RoomSnapshot } from '../shared/protocol';
+import { BIN_ICONS, BUBBLE, ENVELOPE, ENVELOPE_OWN, FONT, HEART_SMALL, JEV_STAND, JEV_STEP, PALETTE, PLANT, type SpriteData } from './pixels';
 
-const W = 960, H = 470;
-// Jev stops beside the trolley rather than on top of it, so his nameplate clears the INCOMING label.
-const points = { desk: [477, 286], pickup: [266, 322], compliments: [327, 173], ideas: [473, 173], complaints: [619, 173], misc: [765, 173], trash: [782, 352] } as const;
+// A handheld-sized room, scaled up with crisp pixels.
+const W = 320, H = 160;
+const [INK, DARK, LIGHT, PAPER] = PALETTE;
+const BIN_X: Record<Category, number> = { compliments: 82, ideas: 136, complaints: 190, misc: 244 };
 type Point = readonly [number, number];
-function travel(a: Point, b: Point, progress: number): Point {
-  const t = Math.max(0, Math.min(1, progress));
-  // Right-angle paths give the little room a tile-based rhythm.
-  const dx = Math.abs(b[0] - a[0]), dy = Math.abs(b[1] - a[1]);
-  const split = dx / (dx + dy || 1);
-  return t < split ? [a[0] + (b[0] - a[0]) * t / split, a[1]] : [b[0], a[1] + (b[1] - a[1]) * (t - split) / (1 - split || 1)];
+// Positions are where Jev's feet land.
+const DESK: Point = [160, 108], PICKUP: Point = [80, 116], TRASH: Point = [262, 122];
+const TO_TRAY: Point[] = [DESK, [PICKUP[0], DESK[1]], PICKUP];
+const FROM_TRAY = [...TO_TRAY].reverse();
+
+// Jev walks around the desk: out along a side aisle, then across the corridor in front of the bins.
+function route(destination: Destination): Point[] {
+  if (destination === 'trash') return [DESK, [TRASH[0], DESK[1]], TRASH];
+  const x = BIN_X[destination], aisle = x < DESK[0] ? 110 : 212;
+  return [DESK, [aisle, DESK[1]], [aisle, 56], [x, 56]];
+}
+function along(path: readonly Point[], progress: number): Point {
+  const lengths = path.slice(1).map((point, i) => Math.abs(point[0] - path[i][0]) + Math.abs(point[1] - path[i][1]));
+  let remaining = Math.max(0, Math.min(1, progress)) * lengths.reduce((sum, length) => sum + length, 0);
+  for (let i = 0; i < lengths.length; i++) {
+    if (remaining <= lengths[i] || i === lengths.length - 1) {
+      const f = lengths[i] ? Math.min(1, remaining / lengths[i]) : 1, a = path[i], b = path[i + 1];
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    }
+    remaining -= lengths[i];
+  }
+  return path[path.length - 1];
 }
 
 export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnapshot | null; ownIds: string[]; onSelect: (category: Category) => void }) {
@@ -26,103 +44,120 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
   }, [room]);
   useEffect(() => { state.current.ownIds = ownIds; }, [ownIds]);
   useEffect(() => {
+    const el = canvas.current, wrap = el?.parentElement;
+    if (!el || !wrap) return;
+    // Whole-number scaling keeps every pixel the same size; fill the screen instead when that would waste too much room.
+    const fit = () => {
+      const available = wrap.clientWidth, dpr = window.devicePixelRatio || 1;
+      const whole = Math.floor(available * dpr / W) * W / dpr;
+      el.style.width = whole >= available * .88 ? `${whole}px` : '100%';
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(wrap);
+    fit();
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
     const el = canvas.current;
-    if (!el) return;
-    const ctx = el.getContext('2d');
-    if (!ctx) return;
-    const c = ctx;
+    const c = el?.getContext('2d');
+    if (!el || !c) return;
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     let raf = 0;
     const rect = (x: number, y: number, w: number, h: number, color: string) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), w, h); };
-    const text = (value: string, x: number, y: number, size = 12, color = '#655c48', align: CanvasTextAlign = 'center') => { c.font = `${size}px ui-monospace, monospace`; c.fillStyle = color; c.textAlign = align; c.fillText(value, x, y); };
-    const envelope = (x: number, y: number, own = false, scale = 1) => {
-      rect(x - scale, y - scale, 23 * scale, 17 * scale, '#73644e'); rect(x, y, 21 * scale, 15 * scale, own ? '#f8d887' : '#fffbea');
-      c.strokeStyle = own ? '#ad7b32' : '#c6bfa5'; c.lineWidth = scale; c.beginPath(); c.moveTo(x, y); c.lineTo(x + 10 * scale, y + 8 * scale); c.lineTo(x + 21 * scale, y); c.stroke();
+    const sprite = (data: SpriteData, x: number, y: number) => {
+      x = Math.round(x); y = Math.round(y);
+      data.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== '.') rect(x + dx, y + dy, 1, 1, PALETTE[+row[dx]]); });
     };
-    const plant = (x: number, y: number) => {
-      rect(x + 3, y + 28, 30, 6, '#b9aa8b'); rect(x + 6, y + 10, 23, 20, '#b78464'); rect(x + 3, y + 8, 29, 7, '#c99774'); rect(x + 16, y - 17, 5, 29, '#64805b');
-      rect(x + 2, y - 10, 15, 9, '#789568'); rect(x - 3, y - 17, 15, 8, '#8fa77a'); rect(x + 20, y - 21, 14, 12, '#6f8d60'); rect(x + 28, y - 27, 9, 9, '#8ca575');
+    const print = (value: string, centerX: number, y: number, color: string = INK) => {
+      let x = Math.round(centerX - (value.length * 4 - 1) / 2);
+      c.fillStyle = color;
+      for (const char of value) {
+        const glyph = FONT[char] ?? FONT[' '];
+        for (let i = 0; i < 15; i++) if (glyph[i] === '1') c.fillRect(x + i % 3, y + Math.floor(i / 3), 1, 1);
+        x += 4;
+      }
+    };
+    const drawRoom = (data: RoomSnapshot | null, mine: string[]) => {
+      // Wall, baseboard, and a tiled floor inside a dark frame.
+      rect(0, 0, W, H, PAPER);
+      rect(0, 0, W, 38, LIGHT);
+      for (let x = 4; x < W; x += 8) for (let y = 4; y < 36; y += 8) rect(x, y, 1, 1, PAPER);
+      rect(0, 38, W, 2, DARK); rect(0, 40, W, 1, INK);
+      for (let x = 8; x < W; x += 16) for (let y = 48; y < H - 4; y += 16) rect(x, y, 1, 1, LIGHT);
+      rect(0, 0, W, 2, INK); rect(0, H - 2, W, 2, INK); rect(0, 0, 2, H, INK); rect(W - 2, 0, 2, H, INK);
+      // Sign, window, and clock.
+      rect(128, 3, 64, 11, INK); rect(129, 4, 62, 9, PAPER); print('JEV\'S MAILROOM', 160, 6);
+      rect(12, 8, 34, 25, INK); rect(14, 10, 30, 21, PAPER); rect(28, 10, 2, 21, DARK); rect(14, 19, 30, 2, DARK);
+      rect(17, 13, 6, 2, LIGHT); rect(33, 24, 7, 2, LIGHT); rect(10, 32, 38, 3, DARK); rect(10, 35, 38, 1, INK);
+      rect(298, 10, 10, 12, INK); rect(296, 12, 14, 8, INK); rect(298, 12, 10, 8, PAPER); rect(302, 13, 1, 4, INK); rect(302, 16, 3, 1, INK);
+      // Four bins along the wall; the icons tell them apart without colour.
+      for (const key of CATEGORIES) {
+        const x = BIN_X[key] - 19, count = data?.counts[key] || 0;
+        print(BIN_META[key].label.toUpperCase(), BIN_X[key], 15);
+        rect(x, 24, 38, 20, INK); rect(x + 2, 26, 34, 5, DARK);
+        if (count) sprite(ENVELOPE, x + 7, 22);
+        if (count > 1) sprite(ENVELOPE, x + 21, 21);
+        rect(x + 2, 31, 34, 11, LIGHT); rect(x + 2, 31, 34, 1, PAPER);
+        sprite(BIN_ICONS[key], BIN_X[key] - 4, 33);
+        rect(x + 2, 44, 34, 2, LIGHT);
+      }
+      // Rug, desk, lamp, and paperwork.
+      rect(118, 80, 84, 36, DARK); rect(120, 82, 80, 32, LIGHT);
+      for (let y = 82; y < 114; y += 3) { rect(116, y, 2, 1, DARK); rect(202, y, 2, 1, DARK); }
+      rect(134, 64, 52, 14, INK); rect(136, 66, 48, 6, LIGHT); rect(136, 72, 48, 4, DARK);
+      rect(137, 78, 3, 6, INK); rect(180, 78, 3, 6, INK);
+      rect(150, 67, 10, 4, PAPER); rect(152, 68, 6, 1, LIGHT); rect(170, 67, 5, 4, INK); rect(171, 68, 3, 2, PAPER);
+      rect(139, 57, 9, 3, DARK); rect(140, 57, 7, 1, LIGHT); rect(143, 60, 1, 6, INK);
+      // Incoming trolley with the waiting envelopes.
+      rect(22, 98, 46, 12, INK); rect(24, 100, 42, 6, DARK); rect(24, 106, 42, 2, LIGHT);
+      rect(26, 110, 2, 10, INK); rect(62, 110, 2, 10, INK); rect(24, 120, 6, 3, INK); rect(60, 120, 6, 3, INK);
+      (data?.queue || []).slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 99 - Math.floor(i / 4) * 4));
+      print('INCOMING', 45, 126);
+      // Trash can.
+      rect(279, 96, 6, 2, INK); rect(272, 98, 20, 3, INK); rect(274, 101, 16, 20, INK); rect(276, 101, 12, 18, DARK);
+      for (const x of [279, 283, 287]) rect(x - 1, 103, 1, 14, LIGHT);
+      print('TRASH', 282, 126);
+      sprite(PLANT, 13, 48); sprite(PLANT, 297, 48);
+      print('EST. TODAY', 160, 149, DARK);
     };
     const draw = (time: number) => {
       const { room: data, ownIds: mine, offset } = state.current;
       const now = Date.now() + (offset ?? 0), active = data?.active, reduced = media.matches;
-      c.imageSmoothingEnabled = false;
-      rect(0, 0, W, H, '#eeeade');
-      // The outside wall, shallow shadows, and warm checkerboard floor.
-      rect(72, 44, 824, 376, '#d2cbb9'); rect(64, 36, 824, 374, '#bcb19a'); rect(70, 42, 812, 362, '#e2d8bf');
-      for (let row = 0; row < 11; row++) for (let col = 0; col < 25; col++) {
-        const x = 80 + col * 32, y = 58 + row * 31;
-        rect(x, y, 31, 30, (row + col) % 2 ? '#e8dfcb' : '#e2d8c2');
-        if ((row * 7 + col * 11) % 17 === 0) rect(x + 8, y + 8, 3, 2, '#d5cab1');
-      }
-      rect(65, 36, 823, 42, '#d0c4aa'); rect(73, 42, 807, 25, '#e4dcc9'); rect(72, 72, 809, 7, '#baa98c');
-      rect(68, 78, 8, 323, '#c7b89b'); rect(879, 78, 8, 323, '#c7b89b'); rect(65, 401, 823, 9, '#bca989');
-      // Mailroom sign.
-      rect(382, 26, 202, 38, '#84765e'); rect(385, 23, 196, 35, '#fbf6e9'); text('J E V ’ S  M A I L R O O M', 483, 45, 11);
-      // Window and wall clock.
-      rect(112, 91, 98, 79, '#b3a184'); rect(117, 94, 88, 67, '#fbf7e7'); rect(122, 98, 78, 57, '#b7cec5'); rect(122, 127, 78, 28, '#cbd9c0');
-      rect(128, 111, 19, 5, '#edf1e5'); rect(168, 105, 25, 5, '#edf1e5'); rect(158, 95, 5, 63, '#faf4df'); rect(120, 124, 81, 5, '#faf4df'); rect(109, 160, 105, 8, '#a99371');
-      // Clock has a fixed readable face rather than pretending this is a live timer.
-      rect(824, 91, 31, 31, '#a69474'); rect(829, 95, 21, 22, '#fbf4de'); rect(839, 98, 2, 10, '#77715c'); rect(840, 106, 6, 2, '#77715c');
-      // Four sorting shelves. The DOM cards below are the accessible hit targets.
-      CATEGORIES.forEach((key, i) => {
-        const x = points[key][0] - 45, color = BIN_META[key].color;
-        rect(x + 4, 145, 91, 20, '#c7bda5'); rect(x - 4, 106, 98, 46, '#8c8067'); rect(x, 111, 90, 40, '#fff7e1');
-        rect(x + 5, 116, 80, 18, '#7e7760');
-        const count = data?.counts[key] || 0;
-        if (count) { envelope(x + 14, 117); if (count > 1) envelope(x + 38, 114); }
-        rect(x - 2, 131, 94, 24, color); rect(x + 4, 137, 82, 2, '#ffffff50');
-        rect(x + 34, 138, 24, 8, '#fbf6e5'); rect(x + 42, 141, 8, 2, '#8c816b');
-        text(['COMPLIMENTS', 'IDEAS', 'COMPLAINTS', 'MISC'][i], x + 45, 96, 10);
-      });
-      // Woven rug and desk.
-      rect(335, 203, 286, 153, '#c1c1a3'); rect(341, 209, 274, 141, '#b8b99a');
-      for (let i = 0; i < 13; i++) rect(342, 214 + i * 10, 272, 1, '#aeb18f');
-      rect(350, 218, 256, 122, '#c3c5a7'); rect(356, 224, 244, 110, '#c8c9ae');
-      for (let i = 0; i < 13; i++) { rect(330, 208 + i * 11, 5, 3, '#b6b897'); rect(621, 208 + i * 11, 5, 3, '#b6b897'); }
-      rect(401, 232, 155, 12, '#a2a384'); rect(407, 214, 9, 33, '#9c7551'); rect(542, 214, 9, 33, '#9c7551');
-      rect(398, 202, 162, 30, '#ab835b'); rect(398, 196, 162, 30, '#c59e70'); rect(402, 198, 154, 3, '#dbb98c');
-      rect(457, 201, 36, 19, '#f5efd9'); rect(463, 206, 24, 2, '#c5bba2'); rect(463, 211, 17, 2, '#c5bba2');
-      rect(516, 202, 15, 13, '#eee6ce'); rect(531, 205, 5, 7, '#eee6ce'); rect(519, 202, 9, 3, '#856c50');
-      rect(417, 186, 5, 24, '#697659'); rect(403, 182, 33, 9, '#87916b'); rect(410, 177, 19, 5, '#9ca580'); rect(410, 207, 20, 4, '#697659');
-      // Incoming trolley, waiting sealed letters only.
-      rect(123, 285, 115, 63, '#bea783'); rect(119, 279, 121, 45, '#cfb48a'); rect(124, 283, 111, 27, '#9d8a6b');
-      rect(125, 328, 8, 33, '#9b896d'); rect(224, 328, 8, 33, '#9b896d'); rect(121, 357, 14, 7, '#807a65'); rect(222, 357, 14, 7, '#807a65');
-      const queued = data?.queue || [];
-      queued.slice(0, 7).forEach((item, i) => envelope(133 + (i % 3) * 28, 292 - Math.floor(i / 3) * 5, mine.includes(item.id)));
-      text('INCOMING', 179, 342, 10, '#6e5f46');
-      // Trash can, with a clearly different silhouette from the public bins.
-      rect(805, 330, 40, 9, '#b8af97'); rect(808, 294, 34, 38, '#8a9180'); rect(804, 290, 42, 6, '#6b7668'); rect(810, 287, 30, 4, '#a1aa97');
-      [815, 825, 835].forEach(x => rect(x, 298, 3, 27, '#a8b09d')); text('TRASH', 825, 356, 10);
-      plant(108, 208); plant(839, 216);
-      // A tiny notice board and floor details make a quiet room still feel inhabited.
-      rect(695, 295, 54, 42, '#baa17d'); rect(699, 299, 46, 34, '#dac79f'); rect(706, 302, 22, 22, '#fff5d6'); rect(711, 309, 13, 2, '#c3b494'); rect(711, 315, 10, 2, '#c3b494'); rect(717, 302, 3, 3, '#c78065');
-      text('EST. TODAY', 477, 385, 10, '#9a9078');
-      let position: Point = points.desk, carrying = false, walking = false, toss = 0;
+      drawRoom(data, mine);
+      let position = DESK, carrying = false, walking = false, reading = false;
+      let flight: { from: Point; to: Point; t: number; arc: number } | null = null;
       if (active) {
-        const pickup = active.pickupAt, depart = active.departAt, end = active.endsAt;
-        if (now < pickup) { position = travel(points.desk, points.pickup, (now - active.startedAt) / (pickup - active.startedAt)); walking = true; }
-        else if (now < depart) { position = travel(points.pickup, points.desk, Math.min(1, (now - pickup) / Math.max(1, (depart - pickup) * .55))); carrying = true; walking = now < pickup + (depart - pickup) * .55; }
-        else { const finishWalk = end - (active.destination === 'trash' ? 750 : 400); position = travel(points.desk, points[active.destination], (now - depart) / (finishWalk - depart)); carrying = now < finishWalk; walking = now < finishWalk; toss = active.destination === 'trash' && now >= finishWalk ? Math.min(1, (now - finishWalk) / 650) : 0; }
-        if (reduced) { position = now < depart ? points.desk : points[active.destination]; walking = false; }
+        const { startedAt, pickupAt, departAt, endsAt, destination } = active;
+        const arrive = endsAt - (destination === 'trash' ? 750 : 400);
+        if (now < pickupAt) { position = along(TO_TRAY, (now - startedAt) / (pickupAt - startedAt)); walking = true; }
+        else if (now < departAt) {
+          const back = (now - pickupAt) / Math.max(1, (departAt - pickupAt) * .55);
+          position = along(FROM_TRAY, back); carrying = true; walking = back < 1; reading = back >= 1;
+        } else {
+          const walk = (now - departAt) / Math.max(1, arrive - departAt);
+          position = along(route(destination), walk); carrying = walk < 1; walking = walk < 1;
+          // Toss over the can's rim, or drop through the bin's slot.
+          if (walk >= 1) flight = { from: [position[0] - 4, position[1] - 23], to: destination === 'trash' ? [278, 92] : [position[0] - 4, 20], t: (now - arrive) / (endsAt - arrive), arc: destination === 'trash' ? 16 : 4 };
+        }
+        if (reduced) { position = now < departAt ? DESK : route(destination).at(-1)!; walking = false; reading = now >= pickupAt && now < departAt; flight = null; }
       }
-      const bob = reduced ? 0 : walking ? Math.sin(time / 75) * 2 : Math.sin(time / 440) * .7;
-      const x = Math.round(position[0]), y = Math.round(position[1]);
-      rect(x - 14, y + 7, 31, 6, '#73755a35');
-      // Jev: blue workwear, dark hair, tiny red mail bag.
-      const step = walking && !reduced ? Math.floor(time / 130) % 2 * 3 : 0;
-      rect(x - 9, y - 2 + step, 7, 11 - step, '#46505a'); rect(x + 4, y - 2, 7, 11 - step, '#46505a');
-      rect(x - 12, y - 19 + bob, 26, 20, '#6f92a3'); rect(x - 8, y - 18 + bob, 18, 12, '#89aabb');
-      rect(x - 17, y - 16 + bob, 5, 15, '#e4b990'); rect(x + 14, y - 16 + bob, 5, 15, '#e4b990');
-      rect(x - 9, y - 36 + bob, 23, 22, '#e6bd94'); rect(x - 12, y - 39 + bob, 25, 10, '#655a47'); rect(x - 12, y - 31 + bob, 6, 12, '#655a47'); rect(x + 10, y - 31 + bob, 5, 9, '#655a47');
-      rect(x - 4, y - 27 + bob, 3, 3, '#4e4b40'); rect(x + 7, y - 27 + bob, 3, 3, '#4e4b40'); rect(x + 1, y - 20 + bob, 5, 2, '#af7e65');
-      rect(x + 8, y - 9 + bob, 13, 13, '#b87d62'); rect(x + 11, y - 17 + bob, 3, 13, '#986e57');
-      if (carrying) envelope(x - 9, y - 13 + bob, !!active && mine.includes(active.id));
-      // Jev stands beside the can and lobs the envelope over its rim.
-      if (toss > 0 && toss < 1 && !reduced) envelope(x + 6 + toss * 30, y - 20 - Math.sin(toss * Math.PI) * 26 - toss * 40);
-      text('JEV', x + 2, y + 26, 10, '#65705d');
-      if (!active) { rect(x + 27, y - 51, 30, 24, '#fbf7e9'); rect(x + 24, y - 33, 7, 5, '#fbf7e9'); text('♥', x + 42, y - 34, 15, '#b77b63'); }
-      else if (now >= active.pickupAt && now < active.departAt) { rect(x + 24, y - 54, 42, 25, '#fbf7e9'); rect(x + 22, y - 34, 7, 5, '#fbf7e9'); text('···', x + 45, y - 36, 20); }
+      const step = walking && !reduced && Math.floor(time / 140) % 2 === 1;
+      const x = Math.round(position[0]), y = Math.round(position[1]), bob = step ? 1 : 0;
+      rect(x - 5, y - 2, 10, 3, LIGHT);
+      sprite(step ? JEV_STEP : JEV_STAND, x - 6, y - 16 - bob);
+      if (reading) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 8);
+      else if (carrying) sprite(active && mine.includes(active.id) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
+      if (flight && flight.t < 1) {
+        const t = Math.max(0, flight.t);
+        sprite(ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
+      }
+      if (!active || reading) {
+        sprite(BUBBLE, x + 4, y - 27);
+        if (reading) { const dots = reduced ? 3 : 1 + Math.floor(time / 300) % 3; for (let i = 0; i < dots; i++) rect(x + 7 + i * 2, y - 23, 1, 1, INK); }
+        else sprite(HEART_SMALL, x + 7, y - 25);
+      }
+      // Exposes Jev's position for end-to-end checks; updated only when it changes.
+      if (el.dataset.jevX !== String(x)) el.dataset.jevX = String(x);
       raf = window.requestAnimationFrame(draw);
     };
     raf = window.requestAnimationFrame(draw);
@@ -131,7 +166,7 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
   const hit = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - bounds.left) * W / bounds.width, y = (event.clientY - bounds.top) * H / bounds.height;
-    return y > 84 && y < 178 ? CATEGORIES.find(category => Math.abs(x - points[category][0]) < 60) : undefined;
+    return y > 14 && y < 48 ? CATEGORIES.find(category => Math.abs(x - BIN_X[category]) < 22) : undefined;
   };
   return <canvas ref={canvas} width={W} height={H} className="room-canvas" role="img" onClick={event => { const category = hit(event); if (category) onSelect(category); }} onMouseMove={event => { event.currentTarget.style.cursor = hit(event) ? 'pointer' : 'default'; }} aria-label="A pixel-art mailroom with Jev, an incoming mail trolley, four sorting bins, and a trash can. Browse the bins using the buttons below." />;
 }

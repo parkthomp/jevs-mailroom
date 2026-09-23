@@ -80,21 +80,13 @@ test('Jev keeps walking to his destination while the room snapshot stays unchang
     if (!active) await page.waitForTimeout(100);
   }
   expect(active?.destination).toBe('trash');
-  // Find Jev by his workwear colour once the walk should have finished but the room is still busy.
-  const jevX = async () => page.evaluate(() => {
-    const el = document.querySelector('canvas') as HTMLCanvasElement;
-    const pixels = el.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, el.width, el.height).data;
-    let sum = 0, count = 0;
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i] === 111 && pixels[i + 1] === 146 && pixels[i + 2] === 163) { sum += (i / 4) % el.width; count++; }
-    }
-    return count ? sum / count : -1;
-  });
+  // The canvas reports where it drew Jev, in room pixels (the room is 320 wide).
+  const jevX = async () => Number(await page.locator('canvas').getAttribute('data-jev-x'));
   const atStart = await jevX();
   await page.waitForTimeout(Math.max(0, active!.endsAt - Date.now() - 250));
   const atEnd = await jevX();
   expect(atStart).toBeGreaterThan(0);
   // The trash can sits on the far right; a frozen clock would leave Jev by the desk or the tray.
-  expect(atEnd).toBeGreaterThan(700);
+  expect(atEnd).toBeGreaterThan(224);
   expect(atEnd).toBeGreaterThan(atStart);
 });

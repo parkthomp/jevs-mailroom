@@ -1,11 +1,11 @@
 export const CATEGORIES = ['compliments', 'ideas', 'complaints', 'misc'] as const;
 export type Category = typeof CATEGORIES[number];
 export type Destination = Category | 'trash';
-export const BIN_META: Record<Category, { label: string; color: string; description: string }> = {
-  compliments: { label: 'Compliments', color: '#91b578', description: 'A little appreciation goes a long way.' },
-  ideas: { label: 'Ideas', color: '#e8bf67', description: 'Small sparks. Big possibilities.' },
-  complaints: { label: 'Complaints', color: '#d68a73', description: 'Something could be better.' },
-  misc: { label: 'Misc', color: '#aaa0c9', description: 'A home for everything else.' },
+export const BIN_META: Record<Category, { label: string; description: string }> = {
+  compliments: { label: 'Compliments', description: 'A little appreciation goes a long way.' },
+  ideas: { label: 'Ideas', description: 'Small sparks. Big possibilities.' },
+  complaints: { label: 'Complaints', description: 'Something could be better.' },
+  misc: { label: 'Misc', description: 'A home for everything else.' },
 };
 export interface PublicMessage {
   id: string;
