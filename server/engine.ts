@@ -113,9 +113,10 @@ export async function startEngine(store: Store) {
               const message = state.messages.find(item => item.id === state.active!.id);
               if (message && ['delivering', 'discarding'].includes(message.status)) {
                 message.status = state.active.destination === 'trash' ? 'discarded' : 'delivered';
-                message.deliveredAt = state.active.endsAt;
+                message.deliveredAt = state.active.endsAt; state.version++;
               }
-              state.active = null; state.version++;
+              // The envelope is filed at endsAt; the next one waits until Jev has walked back to his desk.
+              if ((state.active.homeAt ?? state.active.endsAt) <= now) { state.active = null; state.version++; }
             }
             if (!state.active) {
               const message = state.messages.find(item => ['ready', 'ready_to_discard'].includes(item.status));
@@ -123,7 +124,7 @@ export async function startEngine(store: Store) {
                 const duration = Math.max(100, Number(process.env.DELIVERY_DURATION_MS || 6500));
                 const destination = message.decision.destination;
                 state.active = { id: message.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : message.decision.reaction,
-                  startedAt: now, pickupAt: now + duration * .2, departAt: now + duration * .5, endsAt: now + duration };
+                  startedAt: now, pickupAt: now + duration * .2, departAt: now + duration * .5, endsAt: now + duration, homeAt: now + duration * 1.4 };
                 message.status = destination === 'trash' ? 'discarding' : 'delivering'; state.version++;
               }
             }

@@ -23,6 +23,8 @@ export interface ActiveDelivery {
   pickupAt: number;
   departAt: number;
   endsAt: number;
+  // When Jev is back at his desk after the drop. Absent on deliveries saved before the walk back existed.
+  homeAt?: number;
 }
 export interface RoomSnapshot {
   version: number;

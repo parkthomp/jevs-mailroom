@@ -141,19 +141,23 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       let position = DESK, carrying = false, walking = false, reading = false;
       let flight: { from: Point; to: Point; t: number; arc: number } | null = null;
       if (active) {
-        const { startedAt, pickupAt, departAt, endsAt, destination } = active;
+        const { startedAt, pickupAt, departAt, endsAt, homeAt = endsAt, destination } = active;
         const arrive = endsAt - (destination === 'trash' ? 750 : 400);
         if (now < pickupAt) { position = along(TO_TRAY, (now - startedAt) / (pickupAt - startedAt)); walking = true; }
         else if (now < departAt) {
           const back = (now - pickupAt) / Math.max(1, (departAt - pickupAt) * .55);
           position = along(FROM_TRAY, back); carrying = true; walking = back < 1; reading = back >= 1;
-        } else {
+        } else if (now < endsAt) {
           const walk = (now - departAt) / Math.max(1, arrive - departAt);
           position = along(route(destination), walk); carrying = walk < 1; walking = walk < 1;
           // Toss over the can's rim, or drop through the bin's slot.
           if (walk >= 1) flight = { from: [position[0] - 4, position[1] - 23], to: destination === 'trash' ? [278, 92] : [position[0] - 4, 20], t: (now - arrive) / (endsAt - arrive), arc: destination === 'trash' ? 16 : 4 };
+        } else {
+          // Empty-handed, back the way he came.
+          const home = (now - endsAt) / Math.max(1, homeAt - endsAt);
+          position = along([...route(destination)].reverse(), home); walking = home < 1;
         }
-        if (reduced) { position = now < departAt ? DESK : route(destination).at(-1)!; walking = false; reading = now >= pickupAt && now < departAt; flight = null; }
+        if (reduced) { position = now < departAt || now >= endsAt ? DESK : route(destination).at(-1)!; walking = false; reading = now >= pickupAt && now < departAt; flight = null; }
       }
       const step = walking && !reduced && Math.floor(time / 140) % 2 === 1;
       const x = Math.round(position[0]), y = Math.round(position[1]), bob = step ? 1 : 0;

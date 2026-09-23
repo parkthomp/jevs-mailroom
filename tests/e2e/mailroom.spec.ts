@@ -74,7 +74,7 @@ test('Jev keeps walking to his destination while the room snapshot stays unchang
   }
   await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(`[trash] walk fixture ${Date.now()}`);
   await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
-  let active: { destination: string; endsAt: number } | null = null;
+  let active: { destination: string; endsAt: number; homeAt: number } | null = null;
   for (let i = 0; i < 100 && !active; i++) {
     active = (await (await request.get('/api/room')).json()).active;
     if (!active) await page.waitForTimeout(100);
@@ -89,4 +89,11 @@ test('Jev keeps walking to his destination while the room snapshot stays unchang
   // The trash can sits on the far right; a frozen clock would leave Jev by the desk or the tray.
   expect(atEnd).toBeGreaterThan(224);
   expect(atEnd).toBeGreaterThan(atStart);
+  // After the toss he walks back to his desk (x 160) instead of reappearing there.
+  await page.waitForTimeout(Math.max(0, (active!.endsAt + active!.homeAt) / 2 - Date.now()));
+  const midway = await jevX();
+  expect(midway).toBeGreaterThan(170);
+  expect(midway).toBeLessThan(atEnd);
+  await page.waitForTimeout(Math.max(0, active!.homeAt - Date.now() + 500));
+  expect(await jevX()).toBe(160);
 });
