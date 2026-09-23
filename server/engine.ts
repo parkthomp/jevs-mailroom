@@ -110,7 +110,7 @@ export async function startEngine(store: Store) {
                 message.status = 'failed'; message.nextAttemptAt = now; message.reason = 'Jev is picking up your saved message after a restart.'; state.version++;
               }
             }
-            planJev(state, now, Math.max(0, Number(process.env.JEV_PAUSE_MS ?? 2500)));
+            planJev(state, now);
           });
           const state = await store.read();
           const candidates = state.messages.filter(item => ['pending_review', 'failed'].includes(item.status) && item.nextAttemptAt <= Date.now());

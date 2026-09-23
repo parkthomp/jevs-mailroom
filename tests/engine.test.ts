@@ -18,14 +18,13 @@ async function eventually(check: () => Promise<boolean>, timeout = 8000) {
 
 test('worker sorts valid criticism, discards privately, and recovers an unfinished delivery once', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'jev-engine-test-'));
-  const keys = ['DATA_FILE', 'DATABASE_URL', 'REDIS_URL', 'AI_MODE', 'NODE_ENV', 'JEV_PAUSE_MS', 'DAILY_AI_LIMIT'] as const;
+  const keys = ['DATA_FILE', 'DATABASE_URL', 'REDIS_URL', 'AI_MODE', 'NODE_ENV', 'DAILY_AI_LIMIT'] as const;
   const old = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   process.env.DATA_FILE = join(directory, 'state.json');
   delete process.env.DATABASE_URL;
   delete process.env.REDIS_URL;
   process.env.AI_MODE = 'demo';
   process.env.NODE_ENV = 'test';
-  process.env.JEV_PAUSE_MS = '50';
   process.env.DAILY_AI_LIMIT = '100';
   let store = new Store();
   let stop: (() => Promise<void>) | undefined;
@@ -49,7 +48,7 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
       const item = state.messages.find(item => item.id === recovery.id)!;
       item.status = 'delivering';
       item.decision = { destination: 'ideas', reaction: 'Saved for later!' };
-      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', endsAt: 4, doneAt: 4 };
+      state.active = { id: item.id, destination: 'ideas', reaction: 'Saved for later!', endsAt: 4 };
       state.version++;
     });
     await store.close();

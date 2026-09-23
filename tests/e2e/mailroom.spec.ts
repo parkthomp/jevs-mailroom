@@ -62,16 +62,16 @@ test('mobile and reduced-motion visitors can open every bin without horizontal o
   } finally { await context.close(); }
 });
 
-test('Jev sprints a note to the trash, pauses, and strolls back to his desk', async ({ page, request }) => {
+test('Jev sprints a note to the trash, then strolls off to mill about', async ({ page, request }) => {
   // The canvas draws Jev from the planned legs on its own clock, so he keeps moving between snapshots.
   await page.goto('/');
   await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
   for (let i = 0; i < 80; i++) {
     const room = await (await request.get('/api/room')).json();
-    if (!room.active && !room.queue.length && room.jev.every((leg: { to: number | null }) => leg.to !== null && leg.to < Date.now())) break;
+    if (!room.active && !room.queue.length) break;
     await page.waitForTimeout(250);
   }
-  type Leg = { kind: string; from: number; to: number; carrying?: string };
+  type Leg = { kind: string; from: number; to: number; path: [number, number][]; carrying?: string };
   const sentAt = Date.now();
   await page.getByRole('textbox', { name: 'Your message to Jev' }).fill(`[trash] sprint fixture ${Date.now()}`);
   await page.getByRole('button', { name: 'Send to Jev', exact: true }).click();
@@ -81,26 +81,26 @@ test('Jev sprints a note to the trash, pauses, and strolls back to his desk', as
     if (room.active?.destination === 'trash') { legs = room.jev; break; }
     await page.waitForTimeout(50);
   }
-  const carry = legs.find(leg => leg.kind === 'run' && leg.carrying)!, rest = legs.find(leg => leg.kind === 'rest')!;
-  expect(rest.from - sentAt).toBeLessThan(3500);
-  // The canvas reports where it drew Jev, in room pixels (desk at x 160, trash at x 262).
+  const carry = legs.find(leg => leg.kind === 'run' && leg.carrying)!, drop = legs.find(leg => leg.kind === 'drop')!;
+  // Even from the far side of the room, the note is in the can within a few seconds.
+  expect(drop.to - sentAt).toBeLessThan(5000);
+  // The canvas reports where it drew Jev, in room pixels (the trash can is at x 262).
   const jevX = async () => Number(await page.locator('canvas').getAttribute('data-jev-x'));
   const at = (time: number) => page.waitForTimeout(Math.max(0, time - Date.now()));
   await at(carry.from + (carry.to - carry.from) * .6);
   const midSprint = await jevX();
   expect(midSprint).toBeGreaterThan(80);
   expect(midSprint).toBeLessThan(262);
-  await at(rest.from + 200);
+  await at(drop.from + 100);
   expect(await jevX()).toBe(262);
+  // No pause: he heads off for a stroll as soon as the note lands.
   let stroll: Leg | undefined;
   for (let i = 0; i < 100 && !stroll; i++) {
-    stroll = ((await (await request.get('/api/room')).json()).jev as Leg[]).find(leg => leg.kind === 'walk' && leg.from >= rest.to);
+    stroll = ((await (await request.get('/api/room')).json()).jev as Leg[]).find(leg => leg.kind === 'walk' && leg.from >= drop.to);
     if (!stroll) await page.waitForTimeout(100);
   }
-  await at((stroll!.from + stroll!.to) / 2);
-  const midway = await jevX();
-  expect(midway).toBeGreaterThan(160);
-  expect(midway).toBeLessThan(262);
-  await at(stroll!.to + 300);
-  expect(await jevX()).toBe(160);
+  expect(stroll!.from - drop.to).toBeLessThan(500);
+  expect(stroll!.path[0]).toEqual([262, 122]);
+  await at(stroll!.to + 200);
+  expect(await jevX()).toBe(stroll!.path.at(-1)![0]);
 });

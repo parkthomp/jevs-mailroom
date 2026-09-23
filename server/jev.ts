@@ -1,9 +1,9 @@
 import type { Destination, JevLeg, Point } from '../shared/protocol.js';
-import { DESK, dropPoint, pathLength, partial, route, samePoint, TRAY } from '../shared/walk.js';
+import { DESK, dropPoint, LOUNGE, pathLength, partial, route, TRAY } from '../shared/walk.js';
 import { TRASH_REACTION } from './room.js';
 import type { State } from './store.js';
 
-// Jev sprints for notes and strolls home. Speeds are in room pixels per millisecond.
+// Jev sprints for notes and strolls about otherwise. Speeds are in room pixels per millisecond.
 const RUN = .15, WALK = .045;
 const DROP_MS = { bin: 350, trash: 700 };
 const ANNOUNCE: Record<Destination, string> = {
@@ -17,10 +17,10 @@ function travel(kind: 'run' | 'walk', from: Point, to: Point, start: number, ext
   return length ? { kind, path, from: start, to: start + length / (kind === 'run' ? RUN : WALK), ...extra } : null;
 }
 
-// Advances the shared room by one step: files the note in hand, and sends Jev after the next one
-// the moment it arrives. Every change to his plan starts from wherever he is right now, so he never
-// jumps. Returns whether anything changed.
-export function planJev(state: State, now: number, pauseMs: number): boolean {
+// Advances the shared room by one step: files the note in hand, sends Jev after the next one the
+// moment it arrives, and otherwise keeps him milling about. Every change to his plan starts from
+// wherever he is right now, so he never jumps. Returns whether anything changed.
+export function planJev(state: State, now: number, random = Math.random): boolean {
   const before = JSON.stringify([state.jev, state.active, state.messages.map(message => message.status)]);
   let legs = [...(state.jev ?? [])];
   // Forget finished legs, keeping the last so Jev's resting place is known.
@@ -38,8 +38,7 @@ export function planJev(state: State, now: number, pauseMs: number): boolean {
       message.status = active.destination === 'trash' ? 'discarded' : 'delivered';
       message.deliveredAt = active.endsAt;
     }
-    // Deliveries saved before doneAt existed end when the note lands.
-    if ((active.doneAt ?? active.endsAt) > now) return finish();
+    if (active.endsAt > now) return finish();
     state.active = null;
   }
 
@@ -75,9 +74,8 @@ export function planJev(state: State, now: number, pauseMs: number): boolean {
     const destination = ready.decision.destination, drop = dropPoint(destination), say = ANNOUNCE[destination];
     const carry = travel('run', TRAY, drop, start, { carrying: ready.id, destination, say })!;
     const landed = carry.to! + (destination === 'trash' ? DROP_MS.trash : DROP_MS.bin);
-    legs.push(carry, { kind: 'drop', path: [drop], from: carry.to!, to: landed, carrying: ready.id, destination, say },
-      { kind: 'rest', path: [drop], from: landed, to: landed + pauseMs });
-    state.active = { id: ready.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : ready.decision.reaction, endsAt: landed, doneAt: landed + pauseMs };
+    legs.push(carry, { kind: 'drop', path: [drop], from: carry.to!, to: landed, carrying: ready.id, destination, say });
+    state.active = { id: ready.id, destination, reaction: destination === 'trash' ? TRASH_REACTION : ready.decision.reaction, endsAt: landed };
     ready.status = destination === 'trash' ? 'discarding' : 'delivering';
   } else if (incoming.length) {
     // A note just arrived: run over and wait at the tray for Jev's decision.
@@ -86,10 +84,13 @@ export function planJev(state: State, now: number, pauseMs: number): boolean {
       if (fetch) legs.push(fetch);
       legs.push({ kind: 'wait', path: [TRAY], from: fetch?.to ?? now, to: null });
     }
-  } else if (last?.kind === 'wait' || !samePoint(last ? last.path.at(-1)! : DESK, DESK)) {
-    // Nothing left to sort: stroll back to the desk.
-    const home = travel('walk', halt(), DESK, now);
-    if (home) legs.push(home);
+  } else if (!last || last.to === null || last.to <= now) {
+    // Nothing to sort: stroll somewhere else in the room and linger a moment.
+    const from = halt(), options = LOUNGE.filter(spot => pathLength([from, spot]) > 40);
+    const spot = options[Math.floor(random() * options.length)];
+    const stroll = travel('walk', from, spot, now), start = stroll?.to ?? now;
+    if (stroll) legs.push(stroll);
+    legs.push({ kind: 'rest', path: [spot], from: start, to: start + 1000 + random() * 3000 });
   }
   return finish();
 }

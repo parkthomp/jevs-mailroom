@@ -6,21 +6,28 @@ export const BIN_X: Record<Category, number> = { compliments: 82, ideas: 136, co
 export const DESK: Point = [160, 108], TRAY: Point = [80, 116], TRASH: Point = [262, 122];
 const CORRIDOR = 56; // The strip of floor in front of the bins.
 const AISLES = [110, 212]; // Either side of the desk.
-// Jev's desk, which he goes around rather than through.
-const BLOCK = { left: 128, right: 192, top: 57, bottom: 86 };
+// Furniture Jev goes around rather than through, padded by half his width: the desk, the incoming
+// trolley, and the trash can.
+const BLOCKS = [
+  { left: 128, right: 192, top: 57, bottom: 86 },
+  { left: 16, right: 73, top: 96, bottom: 125 },
+  { left: 266, right: 298, top: 94, bottom: 123 },
+];
+// Places Jev drifts between when there's nothing to sort.
+export const LOUNGE: Point[] = [DESK, [96, 72], [44, 76], [118, 56], [226, 56], [236, 92], [286, 72], [120, 136], [200, 136]];
 
 export const dropPoint = (destination: Destination): Point => destination === 'trash' ? TRASH : [BIN_X[destination], CORRIDOR];
 export const samePoint = (a: Point, b: Point) => a[0] === b[0] && a[1] === b[1];
 export const pathLength = (path: readonly Point[]) =>
   path.slice(1).reduce((sum, point, i) => sum + Math.abs(point[0] - path[i][0]) + Math.abs(point[1] - path[i][1]), 0);
-// Paths are axis-aligned, so a segment hits the desk exactly when its bounding box overlaps it.
-const blocked = (a: Point, b: Point) =>
-  Math.max(a[0], b[0]) >= BLOCK.left && Math.min(a[0], b[0]) <= BLOCK.right && Math.max(a[1], b[1]) >= BLOCK.top && Math.min(a[1], b[1]) <= BLOCK.bottom;
+// Paths are axis-aligned, so a segment hits furniture exactly when its bounding box overlaps it.
+const blocked = (a: Point, b: Point) => BLOCKS.some(block =>
+  Math.max(a[0], b[0]) >= block.left && Math.min(a[0], b[0]) <= block.right && Math.max(a[1], b[1]) >= block.top && Math.min(a[1], b[1]) <= block.bottom);
 const tidy = (path: Point[]) => path.filter((point, i) =>
   i === 0 || !samePoint(point, path[i - 1])).filter((point, i, all) =>
   i === 0 || i === all.length - 1 || !((all[i - 1][0] === point[0] && point[0] === all[i + 1][0]) || (all[i - 1][1] === point[1] && point[1] === all[i + 1][1])));
 
-// The shortest right-angled route between two spots that doesn't cut through the desk.
+// The shortest right-angled route between two spots that doesn't cut through furniture.
 export function route(from: Point, to: Point): Point[] {
   const options = ([
     [from, [from[0], to[1]], to],

@@ -9,7 +9,7 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: !process.env.CI,
-    env: { AI_MODE: 'demo', DATA_FILE: '.context/e2e-state.json', JEV_PAUSE_MS: '1500', SUBMISSIONS_PER_MINUTE: '100' },
+    env: { AI_MODE: 'demo', DATA_FILE: '.context/e2e-state.json', SUBMISSIONS_PER_MINUTE: '100' },
     timeout: 30_000,
   },
 });

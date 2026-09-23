@@ -19,9 +19,8 @@ export interface ActiveDelivery {
   id: string;
   destination: Destination;
   reaction: string;
-  // The note is filed when it lands (endsAt); Jev is free for the next one after his pause (doneAt).
+  // The note is filed when it lands, and Jev is free for the next one.
   endsAt: number;
-  doneAt: number;
 }
 // Where Jev's feet are, in room pixels (the room is 320×160).
 export type Point = readonly [number, number];
