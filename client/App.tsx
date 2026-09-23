@@ -241,10 +241,9 @@ function ComposePanel({ identity, onClose, onSent }: { identity: NamePass; onClo
     } catch (error) { setError((error as Error).message); setSending(false); }
   };
   return <div className="panel-backdrop centered" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="composer window" ref={panel} role="dialog" aria-modal="true" aria-labelledby="compose-title">
+    <section className="composer window" ref={panel} role="dialog" aria-modal="true" aria-label="The incoming desk">
       <div className="panel-top"><span className="eyebrow">THE INCOMING DESK</span><button className="icon-button" onClick={onClose} aria-label="Close the incoming desk"><Sprite data={CLOSE} size={2} /></button></div>
-      <h2 id="compose-title">Leave Jev a little note.</h2>
-      <form onSubmit={send}><label htmlFor="message" className="sr-only">Your message to Jev</label><div className="textarea-wrap"><textarea id="message" ref={textarea} value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void send(event); }} placeholder={'Dear Jev,\nI’ve been thinking…'} maxLength={280} rows={5} required disabled={sending} aria-describedby="public-note character-count" /><span id="character-count" className={text.length > 260 ? 'character-count near-limit' : 'character-count'}>{text.length}<span> / 280</span></span></div>
+      <form onSubmit={send}><label htmlFor="message" className="sr-only">Your message to Jev</label><div className="textarea-wrap"><textarea id="message" ref={textarea} value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void send(event); }} placeholder="Leave a note for Jev" maxLength={280} rows={5} required disabled={sending} aria-describedby="public-note character-count" /><span id="character-count" className={text.length > 260 ? 'character-count near-limit' : 'character-count'}>{text.length}<span> / 280</span></span></div>
         <button className="send-button" type="submit" disabled={!text.trim() || sending}>{sending ? 'Handing it to Jev…' : 'Send to Jev'}</button><p className="public-note" id="public-note"><Sprite data={EXCLAIM} size={2} /> Accepted notes are public. Leave out personal details.</p>{error && <p className="inline-error" role="alert">{error}</p>}
       </form>
     </section>
