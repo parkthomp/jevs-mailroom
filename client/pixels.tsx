@@ -6,58 +6,60 @@ export const PALETTE = ['#081820', '#346856', '#88c070', '#e0f8d0'] as const;
 // Sprites are rows of palette indices; '.' is transparent. In the DOM, shade 0 follows currentColor.
 export type SpriteData = readonly string[];
 
+// Jev is the mailroom's robot: an antenna, a visor with two glowing eyes, bolts for ears, and a chest
+// light. Everyone else in the room is a person, so he's easy to pick out.
 export const JEV_STAND: SpriteData = [
-  '....0000....',
-  '..00111100..',
-  '.0111111110.',
+  '....0220....',
+  '.....00.....',
   '.0000000000.',
-  '.0333333330.',
-  '.0303333030.',
-  '.0333333330.',
-  '.0233003320.',
-  '..00333300..',
-  '..01133110..',
-  '.0111111110.',
-  '011111111110',
-  '031111111130',
+  '.0222222220.',
+  '002000000200',
+  '002030030200',
+  '.0200000020.',
+  '.0222222220.',
+  '..00000000..',
+  '..01111110..',
+  '.0112332110.',
+  '021111111120',
+  '020111111020',
   '..02222220..',
   '..02200220..',
   '..000..000..',
 ];
 export const JEV_FACE: SpriteData = JEV_STAND.slice(0, 9);
-// Jev turns to face where he's going, like visitors do: side on, the cap's brim points ahead of him.
+// Jev turns to face where he's going, like visitors do. Side on, his visor wraps round to the front.
 const JEV_LEFT: SpriteData = [
-  '....0000....',
-  '..00111100..',
-  '.0111111110.',
-  '00000000000.',
-  '.0333333330.',
-  '.0303333330.',
-  '.0333333330.',
-  '.0032333330.',
-  '..00333300..',
-  '..01133110..',
-  '.0111111110.',
-  '.0111111110.',
-  '.0311111110.',
+  '....0220....',
+  '.....00.....',
+  '.0000000000.',
+  '.0222222220.',
+  '.00000002200',
+  '.00300002020',
+  '.00000002200',
+  '.0222222220.',
+  '..00000000..',
+  '..01111110..',
+  '..01111110..',
+  '..01122110..',
+  '..01122110..',
   '..02222220..',
   '..02200220..',
   '..000..000..',
 ];
 const JEV_BACK: SpriteData = [
-  '....0000....',
-  '..00111100..',
-  '.0111111110.',
-  '.0111111110.',
+  '....0220....',
+  '.....00.....',
   '.0000000000.',
-  '.0333333330.',
-  '.2333333332.',
-  '.0333333330.',
-  '..00333300..',
+  '.0222222220.',
+  '002222222200',
+  '002020202200',
+  '.0222222220.',
+  '.0222222220.',
+  '..00000000..',
   '..01111110..',
   '.0111111110.',
-  '011111111110',
-  '031111111130',
+  '021111111120',
+  '020111111020',
   '..02222220..',
   '..02200220..',
   '..000..000..',
@@ -67,17 +69,19 @@ const withStep = (data: SpriteData): SpriteData => [...data.slice(0, 14), '...02
 const JEV_STEPPING = Object.fromEntries(Object.entries(JEV_FACING).map(([facing, data]) => [facing, withStep(data)])) as Record<Facing, SpriteData>;
 export const jevSprite = (facing: Facing, step: boolean) => (step ? JEV_STEPPING : JEV_FACING)[facing];
 
-// Visitors are a head shorter than Jev. Each wears one of LOOKS outfits: a hairstyle, a hair shade, and
-// a shirt shade. H, S, and P stand for hair, shirt, and trousers until the look fills them in.
-const EYES: Record<Facing, string> = { down: '303303', left: '303333', right: '333303', up: 'HHHHHH' };
+// Visitors are Jev's size. Each wears one of LOOKS outfits: a hairstyle, a hair shade, and a shirt
+// shade. H, S, and P stand for hair, shirt, and trousers until the look fills them in. Face rows cover
+// the eight pixels inside the head's outline.
+const EYES: Record<Facing, string> = { down: '30333303', left: '33033333', right: '33333033', up: 'HHHHHHHH' };
+const MOUTH: Record<Facing, string> = { down: '33300333', left: '30033333', right: '33333003', up: 'HHHHHHHH' };
 function visitorRows(style: number, facing: Facing, step: boolean): string[] {
-  const back = facing === 'up', eyes = EYES[facing];
-  const top = ['...0000...', '..0HHHH0..', '.0HHHHHH0.', style === 2 ? '.00000000.' : back ? '.0HHHHHH0.' : '.0H3333H0.'];
+  const back = facing === 'up', skin = back ? 'HHHHHHHH' : '33333333';
+  const top = ['....0000....', '...0HHHH0...', '..0HHHHHH0..', '.0HHHHHHHH0.', style === 2 ? '.0000000000.' : back ? '.0HHHHHHHH0.' : '.0H333333H0.'];
   const face = style === 1
-    ? [`0H${eyes}H0`, back ? '0HHHHHHHH0' : '0H333333H0', back ? '0H0HHHH0H0' : '0H033330H0']
-    : [`.0${eyes}0.`, back ? '.0HHHHHH0.' : '.03333330.', back ? '..0HHHH0..' : '..033330..'];
-  const legs = step ? ['..0PPPP0..', '...0PP0...', '...0000...'] : ['..0PPPP0..', '..0P00P0..', '..00..00..'];
-  return [...top, ...face, '..0SSSS0..', '.0SSSSSS0.', '03SSSSSS30', '.0SSSSSS0.', ...legs];
+    ? [`0H${EYES[facing]}H0`, `0H${skin}H0`, `0H${MOUTH[facing]}H0`, back ? '0HHHHHHHHHH0' : '0HH033330HH0']
+    : [`.0${EYES[facing]}0.`, `.0${skin}0.`, `.0${MOUTH[facing]}0.`, '..00333300..'];
+  const legs = step ? ['...0PPPP0...', '...000000...'] : ['..0PP00PP0..', '..000..000..'];
+  return [...top, ...face, '..0SSSSSS0..', '.0SSSSSSSS0.', '0SSSSSSSSSS0', '03SSSSSSSS30', '..0PPPPPP0..', ...legs];
 }
 const visitorSprites = new Map<string, SpriteData>();
 export function visitorSprite(look: number, facing: Facing, step: boolean): SpriteData {

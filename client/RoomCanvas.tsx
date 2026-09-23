@@ -279,7 +279,7 @@ export default function RoomCanvas(props: Props) {
       } }];
       const character = (vx: number, vy: number, look: number, facing: Facing, walking: boolean) => {
         const stepping = walking && Math.floor(time / 130) % 2 === 1, px = Math.round(vx), py = Math.round(vy);
-        return { y: py, draw: () => { rect(px - 4, py - 1, 8, 2, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 5, py - 14 - (stepping ? 1 : 0)); } };
+        return { y: py, draw: () => { rect(px - 5, py - 2, 10, 3, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 6, py - 16 - (stepping ? 1 : 0)); } };
       };
       const seen = new Set<string>();
       for (const visitor of p.visitors.current?.values() ?? []) {
@@ -301,7 +301,7 @@ export default function RoomCanvas(props: Props) {
       }
       if (leg?.say) say(leg.say, x, y - 25 - bob, y);
       // An arrow over you, unless you're next to something (its label lights up instead).
-      if (!place) sprite(MARKER, Math.round(me.x) - 2, Math.round(me.y) - 20 - hop);
+      if (!place) sprite(MARKER, Math.round(me.x) - 2, Math.round(me.y) - 22 - hop);
 
       // Scale the room up onto the screen, following your character when it doesn't all fit.
       const rw = W * view.scale, rh = H * view.scale, follow = reduced ? 1 : Math.min(1, dt * 6);
