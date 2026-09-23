@@ -94,8 +94,6 @@ export function visitorSprite(look: number, facing: Facing, step: boolean): Spri
   }
   return sprite;
 }
-// Bobs over your own character.
-export const MARKER: SpriteData = ['00000', '.000.', '..0..'];
 
 export const ENVELOPE: SpriteData = ['00000000', '00333300', '03033030', '03300330', '03333330', '00000000'];
 // The sender's own envelope is shaded so they can pick it out on the trolley.

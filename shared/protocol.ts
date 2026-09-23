@@ -64,7 +64,11 @@ export const FACINGS: readonly Facing[] = ['up', 'down', 'left', 'right'];
 // How many outfits a visitor's character can wear (see client/pixels.tsx).
 export const LOOKS = 18;
 // A visitor's character standing in the room. Positions are feet, in room pixels, like Jev's.
-export interface Visitor { id: string; x: number; y: number; facing: Facing; look: number; moving: boolean }
+export interface Visitor { id: string; name: string; x: number; y: number; facing: Facing; look: number; moving: boolean }
+// Name tags are drawn in the room's pixel font, so names keep to the capitals, digits, and few marks it has.
+export const NAME_MAX = 12;
+export const cleanName = (value: string) =>
+  value.replace(/[‘’]/g, "'").toUpperCase().replace(/[^A-Z0-9 .'!?-]/g, '').replace(/\s+/g, ' ').trimStart().slice(0, NAME_MAX);
 export type ServerEvent =
   | { type: 'snapshot'; room: RoomSnapshot }
   | { type: 'hello'; id: string } // Which of the visitors is you.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { BIN_META, CATEGORIES, LOOKS, type BinPage, type Category, type Facing, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
-import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP } from './pixels';
+import { BIN_META, CATEGORIES, cleanName, LOOKS, NAME_MAX, type BinPage, type Category, type Facing, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
+import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP, visitorSprite } from './pixels';
 import type { Spot } from './player';
 import RoomCanvas, { type Move, type Pad } from './RoomCanvas';
 
@@ -9,7 +9,7 @@ type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress; seen?: 
 // start walking ('walk') or step away from what you used ('leave').
 type Talk = { speaker: 'JEV' | null; line: string; ends?: 'walk' | 'leave' };
 const readingTime = (line: string) => Math.max(4000, 2000 + line.length * 60);
-const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', WELCOME_KEY = 'jevs-mailroom-welcomed-v1';
+const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', NAME_KEY = 'jevs-mailroom-name-v1';
 // 'failed' is not terminal: the worker keeps retrying it, so the receipt must keep polling.
 const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
@@ -36,8 +36,8 @@ function readLook(): number {
     return look;
   } catch { return Math.floor(Math.random() * LOOKS); }
 }
-function welcomed() {
-  try { return !!localStorage.getItem(WELCOME_KEY); } catch { return false; }
+function readName(): string | null {
+  try { return cleanName(localStorage.getItem(NAME_KEY) || '').trim() || null; } catch { return null; }
 }
 function EnvelopeIcon({ className = '' }: { className?: string }) {
   return <Sprite data={ENVELOPE} className={className} />;
@@ -252,7 +252,7 @@ function ComposePanel({ onClose, onSent }: { onClose: () => void; onSent: (recei
 }
 
 // Everything the room offers, without walking: for keyboard and screen reader visitors, or anyone in a hurry.
-function MenuPanel({ room, touch, onClose, onCompose, onBin }: { room: RoomSnapshot | null; touch: boolean; onClose: () => void; onCompose: () => void; onBin: (category: Category) => void }) {
+function MenuPanel({ room, touch, name, onClose, onCompose, onBin, onRename }: { room: RoomSnapshot | null; touch: boolean; name: string | null; onClose: () => void; onCompose: () => void; onBin: (category: Category) => void; onRename: () => void }) {
   const panel = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   useDialog(panel, closeButton, onClose);
@@ -264,9 +264,32 @@ function MenuPanel({ room, touch, onClose, onCompose, onBin }: { room: RoomSnaps
       <div className="menu-list" role="group" aria-label="Bins">{CATEGORIES.map(category => <button key={category} className="menu-item" onClick={() => onBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
         <Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={BIN_ICONS[category]} size={3} /><span>{BIN_META[category].label}</span><span className="menu-count">{room?.counts[category] || 0}</span>
       </button>)}</div>
+      <button className="menu-item" onClick={onRename}><Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={PERSON} size={3} /><span>Change name</span><span className="menu-count">{name}</span></button>
       <p className="menu-help">{touch ? 'Walk with the pad, or tap anywhere to walk there. Press A next to a bin to read it, or at the INCOMING desk to write a note.' : 'Walk with the arrow keys or WASD, or click anywhere to walk there. Press Space next to a bin to read it, or at the INCOMING desk to write a note.'}</p>
       {room?.mode === 'demo' && <p className="demo-notice"><span>DEMO MODE</span> Jev is using local sorting rules.</p>}
       <p className="menu-footer">{total} notes filed with care</p>
+    </section>
+  </div>;
+}
+
+// Asks who's visiting before you walk in (and again from the menu). The name rides above your head.
+function NamePanel({ current, look, onClose, onDone }: { current: string | null; look: number; onClose?: () => void; onDone: (name: string) => void }) {
+  const [value, setValue] = useState(current ?? '');
+  const panel = useRef<HTMLElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const clean = value.trim();
+  const stay = useCallback(() => {}, []); // Escape can't skip naming yourself the first time.
+  useDialog(panel, input, onClose ?? stay);
+  return <div className="panel-backdrop centered">
+    <section className="window name-window" ref={panel} role="dialog" aria-modal="true" aria-labelledby="name-title">
+      <div className="panel-top"><span className="eyebrow">{current ? 'YOUR NAME TAG' : 'BEFORE YOU COME IN'}</span>{onClose && <button className="icon-button" onClick={onClose} aria-label="Keep your name"><Sprite data={CLOSE} size={2} /></button>}</div>
+      <div className="name-heading"><span className="name-avatar"><Sprite data={visitorSprite(look, 'down', false)} size={4} /></span><h2 id="name-title">What’s your name?</h2></div>
+      <form onSubmit={event => { event.preventDefault(); if (clean) onDone(clean); }}>
+        <label htmlFor="visitor-name" className="sr-only">Your name</label>
+        <input id="visitor-name" ref={input} className="name-input" value={value} onChange={event => setValue(cleanName(event.target.value))} maxLength={NAME_MAX} autoComplete="nickname" autoCapitalize="characters" spellCheck={false} placeholder="YOUR NAME" aria-describedby="name-note" />
+        <button className="send-button" type="submit" disabled={!clean}>{current ? 'Save name' : 'Walk in'}</button>
+        <p className="public-note" id="name-note"><Sprite data={EXCLAIM} size={2} /> Everyone in the room can see it. Letters and numbers, up to {NAME_MAX}.</p>
+      </form>
     </section>
   </div>;
 }
@@ -296,12 +319,18 @@ export default function App() {
   const { room, connected, error: roomError, selfId, visitors, move } = useRoom();
   const [receipts, setReceipts] = useState<SavedReceipt[]>(readReceipts);
   const [selection, setSelection] = useState(() => { const params = new URLSearchParams(location.search); const value = params.get('bin'); return { category: isCategory(value) ? value : null, message: params.get('message') }; });
-  const [overlay, setOverlay] = useState<'menu' | 'compose' | null>(null);
+  const [overlay, setOverlay] = useState<'menu' | 'compose' | 'name' | null>(null);
   const [near, setNear] = useState<Spot | null>(null);
   const [look] = useState(readLook);
   const touch = useTouch();
-  const [talk, setTalk] = useState<Talk | null>(() => welcomed() ? null : { speaker: 'JEV', ends: 'walk', line: touch ? 'Welcome in! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.' : 'Welcome in! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.' });
-  useEffect(() => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* Private modes just see the welcome each time. */ } }, []);
+  const [name, setName] = useState(readName);
+  const [talk, setTalk] = useState<Talk | null>(null);
+  // Your name tag. A first-timer gets Jev's welcome once they've said who they are.
+  const named = useCallback((next: string) => {
+    try { localStorage.setItem(NAME_KEY, next); } catch { /* Private modes ask again next visit. */ }
+    if (!name) setTalk({ speaker: 'JEV', ends: 'walk', line: touch ? `Welcome in, ${next}! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.` : `Welcome in, ${next}! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.` });
+    setName(next); setOverlay(null);
+  }, [name, touch]);
   useEffect(() => {
     if (!talk) return;
     const timer = setTimeout(() => setTalk(current => current === talk ? null : current), readingTime(talk.line));
@@ -367,11 +396,12 @@ export default function App() {
   }, [openBin, compose]);
   const walked = useCallback(() => setTalk(current => current?.ends === 'walk' ? null : current), []);
   const nearby = useCallback((spot: Spot | null) => { setNear(spot); setTalk(current => current?.ends === 'leave' ? null : current); }, []);
-  const paused = !!overlay || !!selection.category;
+  const naming = (!name || overlay === 'name') && !selection.category;
+  const paused = !!overlay || !!selection.category || naming;
   // On touch screens the text box sits at the top, clear of the floor and the pad.
   const dialogue = talk && !paused && <Dialogue talk={talk} onDismiss={() => setTalk(null)} />;
   return <div className={`game ${touch ? 'touch' : ''}`}>
-    <RoomCanvas room={room} ownIds={ownIds} look={look} selfId={selfId} visitors={visitors} pad={pad} paused={paused} beacon={beacon} onNearby={nearby} onUse={use} onWalk={walked} onMove={move} />
+    <RoomCanvas room={room} ownIds={ownIds} look={look} name={name} selfId={selfId} visitors={visitors} pad={pad} paused={paused} beacon={beacon} onNearby={nearby} onUse={use} onWalk={walked} onMove={move} />
     {!room && <div className="room-loading">Getting the mailroom ready<span className="loading-dots">…</span></div>}
     <header className="hud-top">
       <h1 className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></h1>
@@ -388,7 +418,8 @@ export default function App() {
       {near && <button className="prompt" onClick={() => use(near)}><span className="key">{touch ? 'A' : 'SPACE'}</span>{promptFor(near)}</button>}
     </div>}
     {touch && !paused && <TouchPad pad={pad} onUse={() => { pad.current.use = true; }} />}
-    {overlay === 'menu' && <MenuPanel room={room} touch={touch} onClose={closeWindow} onCompose={compose} onBin={openBin} />}
+    {overlay === 'menu' && <MenuPanel room={room} touch={touch} name={name} onClose={closeWindow} onCompose={compose} onBin={openBin} onRename={() => setOverlay('name')} />}
+    {naming && <NamePanel current={name} look={look} onClose={name ? closeWindow : undefined} onDone={named} />}
     {overlay === 'compose' && <ComposePanel onClose={closeWindow} onSent={sent} />}
     {selection.category && <HistoryPanel category={selection.category} highlight={selection.message} room={room} onSelect={openBin} onClose={closeBin} onCompose={compose} />}
   </div>;

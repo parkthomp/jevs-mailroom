@@ -32,13 +32,13 @@ test('presence shares well-formed moves only, at a limited rate', () => {
   const id = presence.join(socket);
   presence.join(lurker);
   assert.deepEqual(presence.list(), [], 'nobody appears until they move');
-  const move = { type: 'move', x: 100.4, y: 999, facing: 'left', look: 3, moving: true };
-  for (const bad of [null, 'move', { ...move, type: 'chat' }, { ...move, x: Infinity }, { ...move, facing: 'north' }, { ...move, look: 99 }, { ...move, look: 1.5 }, { ...move, moving: 'yes' }]) {
+  const move = { type: 'move', name: ' ada’s  <b>bot</b>! ', x: 100.4, y: 999, facing: 'left', look: 3, moving: true };
+  for (const bad of [null, 'move', { ...move, type: 'chat' }, { ...move, x: Infinity }, { ...move, facing: 'north' }, { ...move, look: 99 }, { ...move, look: 1.5 }, { ...move, moving: 'yes' }, { ...move, name: '<>' }, { ...move, name: 42 }]) {
     assert.equal(presence.move(socket, bad, 0), false);
   }
   assert.equal(presence.dirty, false);
   assert.equal(presence.move(socket, move, 0), true);
-  assert.deepEqual(presence.list(), [{ id, x: 100, y: 160, facing: 'left', look: 3, moving: true }]);
+  assert.deepEqual(presence.list(), [{ id, name: "ADA'S BBOTB!", x: 100, y: 160, facing: 'left', look: 3, moving: true }]);
   for (let i = 1; i < 20; i++) assert.equal(presence.move(socket, move, 500), true);
   assert.equal(presence.move(socket, move, 900), false, 'more than 20 moves a second are dropped');
   assert.equal(presence.move(socket, move, 1000), true);

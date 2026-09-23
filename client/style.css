@@ -93,6 +93,13 @@ textarea::placeholder{color:var(--p1);opacity:1}
 .inline-error{margin-top:12px;padding:8px 12px;background:var(--p0);color:var(--p3);font-size:20px;line-height:1.2}
 .inline-error .text-button{color:var(--p2)}
 .menu{width:min(440px,100%)}
+.name-window{width:min(420px,100%)}
+.name-heading{display:flex;align-items:center;gap:16px;margin:18px 0}
+.name-heading h2{font-size:16px;line-height:1.5}
+.name-avatar{display:grid;place-items:center;flex-shrink:0;width:68px;height:80px;background:var(--p2);border:3px solid var(--p0);box-shadow:3px 3px 0 var(--p1)}
+.name-input{display:block;width:100%;padding:12px 14px;border:3px solid var(--p0);background:var(--p3);box-shadow:inset 4px 4px 0 var(--p2);font-family:var(--pixel);font-size:16px;letter-spacing:2px;text-transform:uppercase;user-select:text;-webkit-user-select:text}
+.name-input:focus-visible{outline:3px solid var(--p0);outline-offset:3px}
+.name-input::placeholder{color:var(--p2);opacity:1}
 .menu-item{display:flex;align-items:center;gap:12px;width:100%;padding:10px 8px;border:0;background:transparent;font-size:24px;text-align:left}
 .menu-item:hover,.menu-item:focus-visible{background:var(--p2);outline:none}
 .menu-cursor{visibility:hidden}

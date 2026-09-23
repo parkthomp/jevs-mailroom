@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { BIN_META, CATEGORIES, type Category, type Facing, type Point, type RoomSnapshot, type Visitor } from '../shared/protocol';
 import { BIN_X, DOOR, jevAt, ROOM_H as H, ROOM_W as W, route } from '../shared/walk';
-import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, jevSprite, MARKER, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
+import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, jevSprite, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
 import { canUse, clicked, facingFor, nearby, sameSpot, SPEED, step, toward, type Spot } from './player';
 
 const [INK, DARK, LIGHT, PAPER] = PALETTE;
@@ -14,6 +14,7 @@ interface Props {
   room: RoomSnapshot | null;
   ownIds: string[];
   look: number;
+  name: string | null; // Your name tag. You stay outside the door until you've given one.
   selfId: string | null;
   visitors: RefObject<Map<string, Visitor>>;
   pad: RefObject<Pad>;
@@ -133,6 +134,13 @@ export default function RoomCanvas(props: Props) {
       if (lit) rect(Math.round(centerX - (value.length * 4 - 1) / 2) - 2, y - 2, value.length * 4 + 3, 9, INK);
       print(value, centerX, y, lit ? PAPER : INK);
     };
+    // A name tag over a character's head, kept inside the room: yours dark, everyone else's light.
+    const tag = (name: string, x: number, top: number, own: boolean) => {
+      const w = name.length * 4 + 3, left = Math.max(2, Math.min(W - 2 - w, x - Math.floor(w / 2)));
+      rect(left, top, w, 9, INK);
+      if (!own) rect(left + 1, top + 1, w - 2, 7, PAPER);
+      print(name, left + w / 2, top + 2, own ? PAPER : INK);
+    };
     const drawRoom = (data: RoomSnapshot | null, mine: string[], tray: { id: string }[], lit: (spot: Spot) => boolean) => {
       // Wall, baseboard, and a tiled floor inside a dark frame, with a doorway in the bottom wall.
       rect(0, 0, W, H, PAPER);
@@ -240,12 +248,12 @@ export default function RoomCanvas(props: Props) {
       useKey = false; if (pad) pad.use = false;
 
       // Tell everyone else where you are, a few times a second at most.
-      const move: Move = { x: Math.round(me.x), y: Math.round(me.y), facing: me.facing, look: p.look, moving: me.moving }, encoded = JSON.stringify(move);
-      if (p.selfId && (encoded !== sent || sentTo !== p.selfId) && time - sentAt > 100) { p.onMove(move); sent = encoded; sentAt = time; sentTo = p.selfId; }
+      const move: Move = { name: p.name ?? '', x: Math.round(me.x), y: Math.round(me.y), facing: me.facing, look: p.look, moving: me.moving }, encoded = JSON.stringify(move);
+      if (p.selfId && p.name && (encoded !== sent || sentTo !== p.selfId) && time - sentAt > 100) { p.onMove(move); sent = encoded; sentAt = time; sentTo = p.selfId; }
 
       // A note Jev is on his way to grab still sits on the desk until he gets there.
       const unclaimed = legs.filter(leg => leg.kind === 'run' && leg.carrying && leg.from > now).map(leg => ({ id: leg.carrying! }));
-      const hop = reduced ? 0 : Math.floor(time / 300) % 2, blink = reduced || Math.floor(time / 500) % 2 === 0;
+      const blink = reduced || Math.floor(time / 500) % 2 === 0;
       const beacon: Spot | null = p.beacon ? { kind: 'bin', category: p.beacon } : null;
       drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])], spot => (!p.paused && sameSpot(spot, place?.spot ?? null)) || (blink && sameSpot(spot, beacon)));
       const { leg } = jev;
@@ -277,31 +285,33 @@ export default function RoomCanvas(props: Props) {
         sprite(jevSprite(jevFacing, jevStep), x - 6, y - 16 - bob);
         if (carried) sprite(mine.includes(carried) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
       } }];
-      const character = (vx: number, vy: number, look: number, facing: Facing, walking: boolean) => {
+      const tags: (() => void)[] = [];
+      const character = (vx: number, vy: number, name: string | null, look: number, facing: Facing, walking: boolean, own: boolean) => {
         const stepping = walking && Math.floor(time / 130) % 2 === 1, px = Math.round(vx), py = Math.round(vy);
+        if (name) tags.push(() => tag(name, px, py - 27, own));
         return { y: py, draw: () => { rect(px - 5, py - 2, 10, 3, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 6, py - 16 - (stepping ? 1 : 0)); } };
       };
-      const seen = new Set<string>();
+      const seen = new Set<string>(), names: string[] = [];
       for (const visitor of p.visitors.current?.values() ?? []) {
         if (visitor.id === p.selfId) continue;
-        seen.add(visitor.id);
+        seen.add(visitor.id); names.push(visitor.name);
         let at = others.get(visitor.id);
         // Glide between updates; jump if they've wandered far (or just arrived).
         if (!at || reduced || Math.abs(at.x - visitor.x) + Math.abs(at.y - visitor.y) > 48) { at = { x: visitor.x, y: visitor.y }; others.set(visitor.id, at); }
         else { const k = Math.min(1, dt * 12); at.x += (visitor.x - at.x) * k; at.y += (visitor.y - at.y) * k; }
-        people.push(character(at.x, at.y, visitor.look, visitor.facing, visitor.moving));
+        people.push(character(at.x, at.y, visitor.name, visitor.look, visitor.facing, visitor.moving, false));
       }
       for (const id of others.keys()) if (!seen.has(id)) others.delete(id);
-      people.push(character(me.x, me.y, p.look, me.facing, me.moving));
+      people.push(character(me.x, me.y, p.name, p.look, me.facing, me.moving, true));
       people.sort((a, b) => a.y - b.y).forEach(person => person.draw());
+      // Name tags go over everyone, with yours drawn last so it's never hidden.
+      tags.forEach(draw => draw());
 
       if (flight && flight.t < 1) {
         const t = Math.max(0, flight.t);
         sprite(leg?.carrying && mine.includes(leg.carrying) ? ENVELOPE_OWN : ENVELOPE, flight.from[0] + (flight.to[0] - flight.from[0]) * t, flight.from[1] + (flight.to[1] - flight.from[1]) * t - Math.sin(t * Math.PI) * flight.arc);
       }
       if (leg?.say) say(leg.say, x, y - 25 - bob, y);
-      // An arrow over you, unless you're next to something (its label lights up instead).
-      if (!place) sprite(MARKER, Math.round(me.x) - 2, Math.round(me.y) - 22 - hop);
 
       // Scale the room up onto the screen, following your character when it doesn't all fit.
       const rw = W * view.scale, rh = H * view.scale, follow = reduced ? 1 : Math.min(1, dt * 6);
@@ -314,7 +324,7 @@ export default function RoomCanvas(props: Props) {
       screen.drawImage(off, view.ox, view.oy, rw, rh);
 
       // Exposes positions for end-to-end checks; updated only when they change.
-      const report = { jevX: String(x), playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size) };
+      const report = { jevX: String(x), playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size), names: names.join(',') };
       for (const [key, value] of Object.entries(report)) if (el.dataset[key] !== value) el.dataset[key] = value;
       raf = window.requestAnimationFrame(draw);
     };
