@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
 
-/* Four shades of handheld green, plus the power LED and A button from the console itself. */
-:root{--p0:#081820;--p1:#346856;--p2:#88c070;--p3:#e0f8d0;--led:#e8404a;--button:#9a2257;--pixel:'Press Start 2P',monospace;--text:'VT323',monospace;--dash:repeating-linear-gradient(90deg,var(--p1) 0 8px,transparent 8px 16px);font-family:var(--text);font-size:20px;line-height:1.25;color:var(--p0);background:var(--p3);-webkit-font-smoothing:none;font-synthesis:none}
+/* Four shades of handheld green, plus the A button from the console itself. */
+:root{--p0:#081820;--p1:#346856;--p2:#88c070;--p3:#e0f8d0;--button:#9a2257;--pixel:'Press Start 2P',monospace;--text:'VT323',monospace;--dash:repeating-linear-gradient(90deg,var(--p1) 0 8px,transparent 8px 16px);font-family:var(--text);font-size:20px;line-height:1.25;color:var(--p0);background:var(--p3);-webkit-font-smoothing:none;font-synthesis:none}
 *{box-sizing:border-box}
 body{margin:0}
 button,textarea,input{font:inherit;color:inherit}
@@ -28,8 +28,6 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none;background:var(--
 .brand-mark{width:32px;height:32px;display:grid;place-items:center;background:var(--p2);border:3px solid var(--p0)}
 .brand-period{color:var(--p1)}
 .room-live{display:flex;gap:10px;align-items:center;padding:9px 12px;font-family:var(--pixel);font-size:8px;letter-spacing:1px;color:var(--p2);background:var(--p0);border:3px solid var(--p1)}
-.power-led{width:8px;height:8px;background:#4a1c22;flex-shrink:0}
-.power-led.on{background:var(--led);box-shadow:0 0 0 2px #e8404a40}
 .visitors{display:flex;align-items:center;gap:6px;margin-left:6px;font-family:var(--text);font-size:20px;line-height:.8;letter-spacing:0;color:var(--p3)}
 .status-dot{display:inline-block;width:8px;height:8px;background:var(--p1);flex-shrink:0}
 /* Like the START button under a handheld screen. */
@@ -148,8 +146,6 @@ textarea::placeholder{color:var(--p1);opacity:1}
 .message-card.highlighted .message-meta{color:var(--p0)}
 .message-meta time{font-family:var(--text);font-size:18px;letter-spacing:0}
 .message-body{font-size:24px;line-height:1.15;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
-.jev-reaction{display:flex;align-items:center;gap:10px;padding-top:12px;font-size:19px;line-height:1.2;color:var(--p1);background:var(--dash) top/100% 2px no-repeat}
-.message-card.highlighted .jev-reaction{color:var(--p0)}
 .load-more{display:block;margin:12px auto;padding:10px 16px;background:var(--p3);border:3px solid var(--p0);box-shadow:3px 3px 0 var(--p1);font-family:var(--pixel);font-size:8px;line-height:1.4}
 .load-more:not(:disabled):hover{background:var(--p0);color:var(--p3)}
 .archive-empty{display:flex;align-items:center;flex-direction:column;text-align:center;padding:56px 20px;color:var(--p1)}

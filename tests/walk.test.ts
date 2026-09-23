@@ -6,7 +6,7 @@ import { DESK, dropPoint, jevAt, LOUNGE, pathLength, route, TRAY } from '../shar
 const destinations: Destination[] = [...CATEGORIES, 'trash'];
 const spots: Point[] = [DESK, TRAY, ...destinations.map(dropPoint), ...LOUNGE, [212, 80], [110, 70], [186, 108]];
 // The desk, trolley, and trash can in feet coordinates, as in shared/walk.ts.
-const furniture = [[128, 192, 57, 86], [16, 73, 96, 125], [266, 298, 94, 123]];
+const furniture = [[128, 192, 64, 86], [16, 73, 96, 125], [266, 298, 94, 123]];
 const throughFurniture = (a: Point, b: Point) => furniture.some(([left, right, top, bottom]) =>
   Math.max(a[0], b[0]) >= left && Math.min(a[0], b[0]) <= right && Math.max(a[1], b[1]) >= top && Math.min(a[1], b[1]) <= bottom);
 

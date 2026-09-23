@@ -177,7 +177,6 @@ export default function RoomCanvas(props: Props) {
       // Trash can.
       rect(279, 96, 6, 2, INK); rect(272, 98, 20, 3, INK); rect(274, 101, 16, 20, INK); rect(276, 101, 12, 18, DARK);
       for (const x of [279, 283, 287]) rect(x - 1, 103, 1, 14, LIGHT);
-      label('TRASH', 282, 126, lit({ kind: 'trash' }));
       sprite(PLANT, 13, 48); sprite(PLANT, 297, 48);
     };
 

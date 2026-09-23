@@ -37,7 +37,7 @@ test('two visitors watch a note get filed and can browse its durable bin history
     // Names come out in capitals, cut to twelve characters.
     await enter(page, 'ada lovelace!');
     await enter(observer, 'Watcher');
-    await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
+    await expect(page.locator('.visitors')).toHaveText(/\d+ here/);
     await write(page, note);
     await expect(page.getByText('Filed in Ideas', { exact: true })).toBeVisible({ timeout: 20000 });
     // Each visitor sees the other's character walking around.
@@ -110,7 +110,7 @@ test('Jev sprints a note to the trash, then strolls off to mill about', async ({
   // The canvas draws Jev from the planned legs on its own clock, so he keeps moving between snapshots.
   await page.goto('/');
   await enter(page);
-  await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
+  await expect(page.locator('.visitors')).toHaveText(/\d+ here/);
   for (let i = 0; i < 80; i++) {
     const room = await (await request.get('/api/room')).json();
     if (!room.active && !room.queue.length) break;
@@ -159,7 +159,7 @@ test('visitors walk up to a bin to read it and to the incoming desk to write a n
   await page.getByRole('button', { name: 'MENU', exact: true }).click();
   await expect(page.getByRole('button', { name: /Change name WALKER/ })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByText('THE MAILROOM IS OPEN', { exact: true })).toBeVisible();
+  await expect(page.locator('.visitors')).toHaveText(/\d+ here/);
   // In through the door, round the left of Jev's desk, and up to the Ideas bin.
   await walk(page, 'ArrowLeft', 'x <= 122');
   await walk(page, 'ArrowUp', 'y <= 58');

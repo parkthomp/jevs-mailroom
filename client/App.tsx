@@ -82,7 +82,6 @@ function Dialogue({ talk, onDismiss }: { talk: Talk; onDismiss: () => void }) {
 
 function useRoom() {
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
-  const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [selfId, setSelfId] = useState<string | null>(null);
   // Characters move many times a second, so they skip React and go straight to the canvas.
@@ -99,7 +98,7 @@ function useRoom() {
     const connect = () => {
       const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
       socket.current = ws;
-      ws.onopen = () => { if (!stopped) { setConnected(true); void refresh(); } };
+      ws.onopen = () => { if (!stopped) void refresh(); };
       ws.onmessage = event => {
         try {
           const parsed = JSON.parse(event.data) as ServerEvent;
@@ -108,7 +107,7 @@ function useRoom() {
           else if (parsed.type === 'visitors' && Array.isArray(parsed.visitors)) visitors.current = new Map(parsed.visitors.map(visitor => [visitor.id, visitor]));
         } catch { /* A later snapshot restores state. */ }
       };
-      ws.onclose = () => { if (!stopped) { setConnected(false); setSelfId(null); visitors.current = new Map(); reconnect = setTimeout(connect, 2000); } };
+      ws.onclose = () => { if (!stopped) { setSelfId(null); visitors.current = new Map(); reconnect = setTimeout(connect, 2000); } };
       ws.onerror = () => ws.close();
     };
     void refresh(); connect();
@@ -116,7 +115,7 @@ function useRoom() {
     return () => { stopped = true; clearInterval(interval); clearTimeout(reconnect); socket.current?.close(); };
   }, []);
   const move = useCallback((next: Omit<ClientEvent, 'type'>) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'move', ...next })); }, []);
-  return { room, connected, error, selfId, visitors, move };
+  return { room, error, selfId, visitors, move };
 }
 
 // Keeps keyboard focus inside a window, closes it on Escape, and hands focus back afterwards.
@@ -162,7 +161,6 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
   const [error, setError] = useState('');
   const [newMessages, setNewMessages] = useState(false);
   const [retry, setRetry] = useState(0);
-  const [copied, setCopied] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -201,15 +199,12 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
       setMessages(current => [...current, ...page.messages.filter(item => !current.some(existing => existing.id === item.id))]); setCursor(page.nextCursor);
     } catch (error) { setError((error as Error).message); } finally { setLoading(false); }
   };
-  const share = async () => {
-    try { await navigator.clipboard.writeText(location.href); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setError('Copy the address from your browser to share this bin.'); }
-  };
   return <div className="panel-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="history-panel" ref={panel} role="dialog" aria-modal="true" aria-labelledby="bin-title">
       <div className="panel-top"><span className="eyebrow">THE MESSAGE ARCHIVE</span><button className="icon-button" ref={closeButton} onClick={onClose} aria-label="Close message archive"><Sprite data={CLOSE} size={2} /></button></div>
       <div className="panel-heading"><span className="big-bin"><Sprite data={BIN_ICONS[category]} size={6} /></span><div><h2 id="bin-title">{meta.label}</h2><p>{meta.description}</p></div></div>
       <nav className="category-tabs" aria-label="Choose a bin">{CATEGORIES.map(key => <button key={key} onClick={() => onSelect(key)} aria-pressed={category === key} className={category === key ? 'selected' : ''}>{BIN_META[key].label}</button>)}</nav>
-      <div className="archive-summary"><span>{countLabel(total)} · newest first</span><button className="text-button" onClick={share}>{copied ? 'Link copied!' : 'Copy link'} {!copied && <Arrow />}</button></div>
+      <div className="archive-summary"><span>{countLabel(total)} · newest first</span></div>
       {newMessages && <button className="new-messages" onClick={() => { scroll.current?.scrollTo({ top: 0, behavior: 'smooth' }); void refresh().catch(error => setError(error.message)); }}>New messages have arrived <Sprite data={UP} size={2} /></button>}
       <div className="message-list" ref={scroll}>
         {error && <div className="inline-error" role="alert">{error} <button className="text-button" onClick={() => setRetry(value => value + 1)}>Try again</button></div>}
@@ -217,7 +212,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
         {!loading && !messages.length && !error && <div className="archive-empty"><EnvelopeIcon /><h3>A little room for your thoughts.</h3><p>No messages here yet. Leave Jev a note at the incoming desk and give this bin its first story.</p><button className="text-button" onClick={onCompose}>Write a note <Arrow /></button></div>}
         {messages.map(message => <article key={message.id} className={`message-card ${message.id === highlight ? 'highlighted' : ''}`}>
           <div className="message-meta"><span>{message.id === highlight ? 'YOUR NOTE' : message.name ? `FROM ${message.name}` : 'A NOTE FROM SOMEONE'}</span><time dateTime={new Date(message.deliveredAt).toISOString()}>{new Date(message.deliveredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
-          <p className="message-body">{message.text}</p><div className="jev-reaction"><Sprite data={JEV_FACE} size={2} className="mini-face" /><span>{message.reaction}</span></div>
+          <p className="message-body">{message.text}</p>
         </article>)}
         {cursor && <button className="load-more" onClick={loadMore} disabled={loading}>{loading ? 'Opening more mail…' : 'Load more messages'}</button>}
       </div>
@@ -330,7 +325,7 @@ function TouchPad({ pad, onUse }: { pad: RefObject<Pad>; onUse: () => void }) {
 }
 
 export default function App() {
-  const { room, connected, error: roomError, selfId, visitors, move } = useRoom();
+  const { room, error: roomError, selfId, visitors, move } = useRoom();
   const [receipts, setReceipts] = useState<SavedReceipt[]>(readReceipts);
   const [selection, setSelection] = useState(() => { const params = new URLSearchParams(location.search); const value = params.get('bin'); return { category: isCategory(value) ? value : null, message: params.get('message') }; });
   const [overlay, setOverlay] = useState<'menu' | 'compose' | 'name' | null>(null);
@@ -422,7 +417,7 @@ export default function App() {
     {!room && <div className="room-loading">Getting the mailroom ready<span className="loading-dots">…</span></div>}
     <header className="hud-top">
       <h1 className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></h1>
-      <span className="room-live"><span className={`power-led ${connected ? 'on' : ''}`} /><span>{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span><span className="visitors"><Sprite data={PERSON} size={2} /> {room ? `${room.online} here` : '…'}</span></span>
+      <span className="room-live"><span className="visitors"><Sprite data={PERSON} size={2} /> {room ? `${room.online} here` : '…'}</span></span>
       <button className="start-button" onClick={() => setOverlay('menu')}>MENU</button>
     </header>
     <div className="hud-notices">

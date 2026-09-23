@@ -9,6 +9,10 @@ test('visitors stay on the floor and walk around the furniture', () => {
   assert.ok(!walkable([100, DOOR[1]]), 'only the doorway opens onto the bottom wall');
   assert.ok(!walkable([100, 40]), 'the bins sit against the wall');
   assert.ok(!walkable([160, 70]), 'Jev’s desk is solid');
+  // The lamp does not push the desk collision above the desktop.
+  let behind: [number, number] = [160, 50];
+  for (let i = 0; i < 100; i++) behind = step(behind, 0, 1, 1) as [number, number];
+  assert.deepEqual(behind, [160, 63]);
   // Walking straight up into the desk stops just below it...
   let at: [number, number] = [160, 120];
   for (let i = 0; i < 100; i++) at = step(at, 0, -1, 1) as [number, number];
@@ -16,7 +20,7 @@ test('visitors stay on the floor and walk around the furniture', () => {
   // ...and pushing diagonally slides along its edge instead of sticking.
   const slid = step(at, -1, -1, 2);
   assert.ok(slid[0] < 160 && slid[1] === 87);
-  assert.equal(toward([160, 120], [160, 60], 100), null, 'a clicked walk stops at furniture');
+  assert.equal(toward([160, 120], [160, 70], 100), null, 'a clicked walk stops at furniture');
   assert.deepEqual(toward([100, 120], [100, 60], 100), [100, 60]);
 });
 

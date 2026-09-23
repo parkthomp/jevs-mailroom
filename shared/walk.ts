@@ -10,7 +10,7 @@ const AISLES = [110, 212]; // Either side of the desk.
 // Furniture Jev goes around rather than through, padded by half his width: the desk, the incoming
 // trolley, and the trash can.
 export const BLOCKS = [
-  { left: 128, right: 192, top: 57, bottom: 86 },
+  { left: 128, right: 192, top: 64, bottom: 86 },
   { left: 16, right: 73, top: 96, bottom: 125 },
   { left: 266, right: 298, top: 94, bottom: 123 },
 ];
