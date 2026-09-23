@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import type { RoomSnapshot, SubmissionReceipt } from '../shared/protocol.js';
+import type { NamePass, RoomSnapshot, SubmissionReceipt } from '../shared/protocol.js';
 
 async function freePort() {
   const server = createServer();
@@ -61,8 +61,18 @@ test('HTTP + WebSockets share a durable room and never disclose a discarded mess
       socket.on('message', data => { const event = JSON.parse(data.toString()); if (event.type === 'snapshot') records.push(event.room); });
       await once(socket, 'open');
     }
+    const nameTag = (name: string) => fetch(`${base}/api/names`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+    const turnedAway = await nameTag('trash can');
+    assert.equal(turnedAway.status, 422);
+    assert.match((await turnedAway.json()).error, /TRASH/);
+    const approved = await nameTag('Ada');
+    assert.ok(approved.ok);
+    const identity = await approved.json() as NamePass;
+    assert.equal(identity.name, 'ADA');
+    const unnamed = await fetch(`${base}/api/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'hi', clientSubmissionId: 'http-unnamed-submission-0001', name: 'MALLORY', namePass: identity.pass }) });
+    assert.equal(unnamed.status, 400, 'a pass for one name cannot sign notes as another');
     const post = async (text: string, clientSubmissionId: string) => {
-      const response = await fetch(`${base}/api/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, clientSubmissionId }) });
+      const response = await fetch(`${base}/api/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, clientSubmissionId, name: identity.name, namePass: identity.pass }) });
       assert.ok(response.ok, `Submit failed ${response.status}: ${await response.clone().text()}`);
       return response.json() as Promise<SubmissionReceipt>;
     };
@@ -83,6 +93,7 @@ test('HTTP + WebSockets share a durable room and never disclose a discarded mess
     const page = await (await fetch(`${base}/api/bins/ideas/messages`)).json();
     assert.equal(page.total, 1);
     assert.equal(page.messages[0].text, 'Please add a sunny garden.');
+    assert.equal(page.messages[0].name, 'ADA');
     assert.equal((await (await fetch(`${base}/api/messages/${receipt.id}`)).json()).id, receipt.id);
     sockets.forEach(socket => socket.close());
     await stopChild(child);

@@ -30,8 +30,8 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
   let stop: (() => Promise<void>) | undefined;
   try {
     await store.init();
-    const complaint = await submit(store, 'The form is broken and slow.', 'complaint');
-    const discarded = await submit(store, '[trash] PRIVATE_FIXTURE_DO_NOT_PUBLISH', 'screened');
+    const complaint = await submit(store, 'The form is broken and slow.', 'complaint', 'ADA');
+    const discarded = await submit(store, '[trash] PRIVATE_FIXTURE_DO_NOT_PUBLISH', 'screened', 'ADA');
     stop = await startEngine(store);
     await eventually(async () => {
       const state = await store.read();
@@ -40,10 +40,11 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
     const room = snapshot(await store.read(), 1, 'demo');
     assert.equal(room.counts.complaints, 1);
     assert.equal(room.recent.length, 1);
+    assert.equal(room.recent[0].name, 'ADA', 'published notes carry their sender’s name');
     assert.doesNotMatch(JSON.stringify(room), /PRIVATE_FIXTURE/);
     await stop(); stop = undefined;
 
-    const recovery = await submit(store, 'A saved idea', 'recover');
+    const recovery = await submit(store, 'A saved idea', 'recover', 'ADA');
     await store.mutate(state => {
       const item = state.messages.find(item => item.id === recovery.id)!;
       item.status = 'delivering';

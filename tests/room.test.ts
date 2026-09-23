@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Store, type State, type StoredMessage } from '../server/store.js';
-import { asPublic, binPage, progress, snapshot, submit } from '../server/room.js';
+import { approveName, asPublic, binPage, progress, snapshot, submit, validPass } from '../server/room.js';
 
 const message = (id: string, overrides: Partial<StoredMessage> = {}): StoredMessage => ({
   id, submissionId: id, tokenHash: '', text: `A thoughtful idea ${id}`,
@@ -59,11 +59,11 @@ test('concurrent submissions are durable and idempotent, and receipts authorize 
   let store = new Store();
   try {
     await store.init();
-    const receipts = await Promise.all(Array.from({ length: 8 }, () => submit(store, 'Please add a garden.', 'same-submission')));
+    const receipts = await Promise.all(Array.from({ length: 8 }, () => submit(store, 'Please add a garden.', 'same-submission', 'ADA')));
     assert.equal(new Set(receipts.map(item => item.id)).size, 1);
     assert.equal(new Set(receipts.map(item => item.token)).size, 1);
     const receipt = receipts[0];
-    await assert.rejects(submit(store, 'Different text', 'same-submission'), /different message/);
+    await assert.rejects(submit(store, 'Different text', 'same-submission', 'ADA'), /different message/);
     const state = await store.read();
     assert.equal(state.messages.length, 1);
     assert.throws(() => progress(state, receipt.id, 'incorrect'), /Receipt not found/);
@@ -74,11 +74,39 @@ test('concurrent submissions are durable and idempotent, and receipts authorize 
     const recovered = await store.read();
     assert.equal(recovered.messages[0].text, 'Please add a garden.');
     assert.equal(progress(recovered, receipt.id, receipt.token).id, receipt.id);
-    assert.equal((await submit(store, 'Please add a garden.', 'same-submission')).id, receipt.id);
+    assert.equal((await submit(store, 'Please add a garden.', 'same-submission', 'ADA')).id, receipt.id);
   } finally {
     await store.close();
     if (oldFile === undefined) delete process.env.DATA_FILE; else process.env.DATA_FILE = oldFile;
     if (oldDatabase === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = oldDatabase;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('names Jev approves come back cleaned with a pass; turned-away names and forged passes do not', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'jev-names-test-'));
+  const env = { ...process.env };
+  process.env.DATA_FILE = join(directory, 'state.json');
+  delete process.env.DATABASE_URL;
+  process.env.AI_MODE = 'demo';
+  const store = new Store();
+  try {
+    await store.init();
+    const approved = await approveName(store, ' ada’s  bot! ');
+    assert.equal(approved.name, "ADA'S BOT!");
+    assert.ok(validPass(approved.name, approved.pass));
+    assert.ok(!validPass('SOMEONE ELSE', approved.pass), 'a pass only vouches for its own name');
+    assert.ok(!validPass(approved.name, 'forged') && !validPass(approved.name, undefined));
+    await assert.rejects(approveName(store, 'trash panda'), (error: Error & { status?: number }) => error.status === 422 && /TRASH/.test(error.message));
+    await assert.rejects(approveName(store, '<>'), (error: Error & { status?: number }) => error.status === 400);
+    assert.equal((await store.read()).budget.calls, 2, 'each new name costs one check');
+    await approveName(store, "ada's bot!");
+    assert.equal((await store.read()).budget.calls, 2, 'a name Jev already judged is not asked about again');
+    process.env.DAILY_AI_LIMIT = '2';
+    await assert.rejects(approveName(store, 'grace'), (error: Error & { status?: number }) => error.status === 503);
+  } finally {
+    await store.close();
+    process.env = env;
     await rm(directory, { recursive: true, force: true });
   }
 });

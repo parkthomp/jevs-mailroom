@@ -5,11 +5,12 @@ import { ROOM_H, ROOM_W } from '../shared/walk.js';
 // Where each visitor's character is standing. Kept in memory on the web server only: positions are
 // throwaway, so after a restart everyone simply walks back in. Nothing here is ever stored or typed
 // by a visitor except a short name tag, limited to the capitals, digits, and few marks the room's
-// pixel font can draw.
+// pixel font can draw, and shown only with proof that Jev approved it.
 const MAX_SHOWN = 60, MAX_MOVES_PER_SECOND = 20;
 export class Presence<Socket extends object> {
   private visitors = new Map<Socket, { id: string; visitor: Visitor | null; window: number; moves: number }>();
   dirty = false;
+  constructor(private approved: (name: string, pass: unknown) => boolean) {}
   join(socket: Socket): string {
     const id = randomBytes(6).toString('base64url');
     this.visitors.set(socket, { id, visitor: null, window: 0, moves: 0 });
@@ -23,9 +24,9 @@ export class Presence<Socket extends object> {
   move(socket: Socket, event: unknown, now = Date.now()): boolean {
     const entry = this.visitors.get(socket);
     if (!entry || typeof event !== 'object' || event === null) return false;
-    const { type, name, x, y, facing, look, moving } = event as Record<string, unknown>;
+    const { type, name, pass, x, y, facing, look, moving } = event as Record<string, unknown>;
     const tag = typeof name === 'string' ? cleanName(name).trim() : '';
-    if (!tag) return false;
+    if (!tag || !this.approved(tag, pass)) return false;
     if (type !== 'move' || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return false;
     if (!FACINGS.includes(facing as Facing) || !Number.isInteger(look) || (look as number) < 0 || (look as number) >= LOOKS || typeof moving !== 'boolean') return false;
     if (now - entry.window >= 1000) { entry.window = now; entry.moves = 0; }

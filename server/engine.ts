@@ -2,7 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import type pg from 'pg';
 import { decideMessage, aiMode } from './ai.js';
-import { TRASH_REACTION } from './room.js';
+import { spendBudget, TRASH_REACTION } from './room.js';
 import { planJev } from './jev.js';
 import type { Store } from './store.js';
 
@@ -26,15 +26,13 @@ export async function startEngine(store: Store) {
       if (!leader || stopping) return null;
       const message = state.messages.find(item => item.id === id);
       if (!message || !['pending_review', 'failed'].includes(message.status) || message.nextAttemptAt > Date.now()) return null;
-      const date = new Date().toISOString().slice(0, 10);
-      if (state.budget.date !== date) state.budget = { date, calls: 0 };
-      if (state.budget.calls >= Number(process.env.DAILY_AI_LIMIT || 500)) {
+      if (!spendBudget(state)) {
         message.status = 'failed'; message.reason = 'Jev has reached today’s processing limit. Your message is saved for tomorrow.';
-        message.nextAttemptAt = Date.parse(`${date}T00:00:00Z`) + 86_400_000;
+        message.nextAttemptAt = Date.parse(`${state.budget.date}T00:00:00Z`) + 86_400_000;
         state.version++;
         return null;
       }
-      state.budget.calls++; message.attempts = message.attempts >= 5 ? 1 : message.attempts + 1; message.status = 'classifying'; message.claimedAt = Date.now();
+      message.attempts = message.attempts >= 5 ? 1 : message.attempts + 1; message.status = 'classifying'; message.claimedAt = Date.now();
       message.reason = undefined; state.version++;
       return { text: message.text, attempt: message.attempts };
     });

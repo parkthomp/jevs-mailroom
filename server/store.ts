@@ -8,6 +8,7 @@ export interface StoredMessage {
   status: SubmissionStatus; createdAt: number; deliveredAt?: number;
   decision?: JevDecision; attempts: number; nextAttemptAt: number; claimedAt?: number;
   reason?: string;
+  name?: string; // The sender's approved name tag. Absent on notes sent before names were attached.
 }
 export interface State {
   version: number; messages: StoredMessage[]; active: ActiveDelivery | null;

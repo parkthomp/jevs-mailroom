@@ -9,6 +9,7 @@ export const BIN_META: Record<Category, { label: string; description: string }> 
 };
 export interface PublicMessage {
   id: string;
+  name: string | null; // Who sent it. Null on notes from before names were attached.
   text: string;
   category: Category;
   reaction: string;
@@ -73,5 +74,7 @@ export type ServerEvent =
   | { type: 'snapshot'; room: RoomSnapshot }
   | { type: 'hello'; id: string } // Which of the visitors is you.
   | { type: 'visitors'; visitors: Visitor[] };
-export type ClientEvent = { type: 'move' } & Omit<Visitor, 'id'>;
+// A name Jev has approved, with the server's proof of it. Characters and notes need one.
+export interface NamePass { name: string; pass: string }
+export type ClientEvent = { type: 'move'; pass: string } & Omit<Visitor, 'id'>;
 export interface JevDecision { destination: Destination; reaction: string; reason?: string }

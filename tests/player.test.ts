@@ -27,13 +27,13 @@ test('walking up to a bin, the incoming desk, or the trash offers to use it', ()
   assert.equal(nearby([200, 136]), null, 'nothing to use in the open floor, even with Jev nearby');
 });
 
-test('presence shares well-formed moves only, at a limited rate', () => {
-  const presence = new Presence<object>(), socket = {}, lurker = {};
+test('presence shares well-formed moves with approved names only, at a limited rate', () => {
+  const presence = new Presence<object>((name, pass) => pass === `ok:${name}`), socket = {}, lurker = {};
   const id = presence.join(socket);
   presence.join(lurker);
   assert.deepEqual(presence.list(), [], 'nobody appears until they move');
-  const move = { type: 'move', name: ' ada’s  <b>bot</b>! ', x: 100.4, y: 999, facing: 'left', look: 3, moving: true };
-  for (const bad of [null, 'move', { ...move, type: 'chat' }, { ...move, x: Infinity }, { ...move, facing: 'north' }, { ...move, look: 99 }, { ...move, look: 1.5 }, { ...move, moving: 'yes' }, { ...move, name: '<>' }, { ...move, name: 42 }]) {
+  const move = { type: 'move', name: ' ada’s  <b>bot</b>! ', x: 100.4, y: 999, facing: 'left', look: 3, moving: true, pass: "ok:ADA'S BBOTB!" };
+  for (const bad of [null, { ...move, pass: 'forged' }, { ...move, pass: undefined }, 'move', { ...move, type: 'chat' }, { ...move, x: Infinity }, { ...move, facing: 'north' }, { ...move, look: 99 }, { ...move, look: 1.5 }, { ...move, moving: 'yes' }, { ...move, name: '<>' }, { ...move, name: 42 }]) {
     assert.equal(presence.move(socket, bad, 0), false);
   }
   assert.equal(presence.dirty, false);

@@ -43,7 +43,23 @@ const HAZARDS: Record<Hazard, { instructions: string; criteria: { true: string; 
     criteria: { true: 'It threatens or encourages harm.', false: 'It contains no threats or encouragement of harm.' },
   },
 };
-// A hazard at or above this probability sends the envelope to the trash.
+// Name tags float over characters for everyone to see, so Jev vets them too, with the same bar.
+type NameHazard = 'obscene' | 'attack';
+const NAME_HAZARDS: Record<NameHazard, { instructions: string; criteria: { true: string; false: string } }> = {
+  obscene: {
+    instructions: 'Is `name` obscene, sexual, or crude? Count swear words, sexual terms, and slurs, including ones disguised with misspellings, numbers, spacing, or punctuation.',
+    criteria: { true: 'It is obscene, sexual, crude, or a slur, even if disguised.', false: 'It is a clean name or nickname, even if silly, made up, or unusual.' },
+  },
+  attack: {
+    instructions: 'Is `name` an attack: does it insult, mock, threaten, or spread hate about a real person or group?',
+    criteria: { true: 'It insults, mocks, threatens, or spreads hate about someone.', false: 'It attacks no one. Ordinary names, nicknames, jokes, and made-up words count as no.' },
+  },
+};
+const NAME_REASONS: Record<NameHazard, string> = {
+  obscene: 'Jev won’t write that on a name tag. Please pick something friendlier.',
+  attack: 'That name reads like an attack on someone. Please pick a different one.',
+};
+// A hazard at or above this probability sends the envelope to the trash (or turns the name away).
 const REJECT_AT = 0.7;
 const CATEGORY_CRITERIA: Record<Category, string> = {
   compliments: 'Praise or appreciation.',
@@ -75,32 +91,26 @@ function timeoutMs(): number {
 
 const noul = z.object({ type: z.literal('noul'), noul: z.number().min(0).max(1) });
 const choice = z.object({ type: z.literal('choice'), choice: z.string() });
-const decisionValidator = z.object({
-  answers: z.object({
-    ...Object.fromEntries(Object.keys(HAZARDS).map(hazard => [hazard, noul])) as Record<Hazard, typeof noul>,
-    category: z.object({ type: z.literal('choice'), choice: z.enum(CATEGORIES) }),
-    ...Object.fromEntries(CATEGORIES.map(category => [`reaction_${category}`, choice])) as Record<`reaction_${Category}`, typeof choice>,
-  }),
+const decisionAnswers = z.object({
+  ...Object.fromEntries(Object.keys(HAZARDS).map(hazard => [hazard, noul])) as Record<Hazard, typeof noul>,
+  category: z.object({ type: z.literal('choice'), choice: z.enum(CATEGORIES) }),
+  ...Object.fromEntries(CATEGORIES.map(category => [`reaction_${category}`, choice])) as Record<`reaction_${Category}`, typeof choice>,
 });
+const nameAnswers = z.object(Object.fromEntries(Object.keys(NAME_HAZARDS).map(hazard => [hazard, noul])) as Record<NameHazard, typeof noul>);
+const yesNo = (hazards: Record<string, object>) => Object.fromEntries(Object.entries(hazards).map(([hazard, question]) => [hazard, { type: 'noul', ...question }]));
+// The hazard Jev is surest of, and how sure he is.
+const strongest = <H extends string>(answers: Record<H, { noul: number }>, hazards: Record<H, unknown>) =>
+  (Object.keys(hazards) as H[]).map(key => [key, answers[key].noul] as const).sort((a, b) => b[1] - a[1])[0];
 
-async function systemOne(text: string) {
-  const questions = {
-    ...Object.fromEntries(Object.entries(HAZARDS).map(([hazard, question]) => [hazard, { type: 'noul', ...question }])),
-    category: { type: 'choice', instructions: 'Which bin should `message` be filed in, based on its main intent?', criteria: CATEGORY_CRITERIA },
-    // Asked for every bin at once (one call); only the winning bin's reaction is used.
-    ...Object.fromEntries(CATEGORIES.map(category => [`reaction_${category}`, {
-      type: 'choice', instructions: 'Which reply from Jev, a friendly mailroom clerk, best fits `message`?',
-      criteria: Object.fromEntries(REACTIONS[category].map(line => [line, null])),
-    }])),
-  };
+async function systemOne<T extends z.ZodType>(state: Record<string, string>, questions: Record<string, unknown>, answers: T): Promise<z.output<T>> {
   let response: Response;
   try {
     response = await fetch('https://openrouter.ai/api/v1/systemone', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`, 'Content-Type': 'application/json', 'X-Title': "Jev's Mailroom" },
       signal: AbortSignal.timeout(timeoutMs()),
-      // The message is state (data), never part of the questions.
-      body: JSON.stringify({ model: process.env.OPENROUTER_MODEL!.trim(), state: { message: text }, questions }),
+      // What's being judged is state (data), never part of the questions.
+      body: JSON.stringify({ model: process.env.OPENROUTER_MODEL!.trim(), state, questions }),
     });
   } catch (error) {
     // Never propagate provider errors that could include a submitted message or credentials.
@@ -109,7 +119,7 @@ async function systemOne(text: string) {
   }
   if (!response.ok) throw new Error(`OpenRouter returned HTTP ${response.status}. Check the configured model, credits, and API key.`);
   try {
-    return decisionValidator.parse(await response.json()).answers;
+    return answers.parse(((await response.json()) as { answers?: unknown } | null)?.answers);
   } catch {
     throw new Error('OpenRouter returned an invalid decision result. The message can be retried.');
   }
@@ -128,10 +138,26 @@ function demoDecision(text: string): JevDecision {
 export async function decideMessage(text: string): Promise<JevDecision> {
   if (aiMode() === 'demo') return demoDecision(text);
   // One attempt per call. Durable job retries belong to the worker, avoiding multiplied retries/cost.
-  const answers = await systemOne(text);
-  const [hazard, probability] = (Object.keys(HAZARDS) as Hazard[]).map(key => [key, answers[key].noul] as const).sort((a, b) => b[1] - a[1])[0];
+  const answers = await systemOne({ message: text }, {
+    ...yesNo(HAZARDS),
+    category: { type: 'choice', instructions: 'Which bin should `message` be filed in, based on its main intent?', criteria: CATEGORY_CRITERIA },
+    // Asked for every bin at once (one call); only the winning bin's reaction is used.
+    ...Object.fromEntries(CATEGORIES.map(category => [`reaction_${category}`, {
+      type: 'choice', instructions: 'Which reply from Jev, a friendly mailroom clerk, best fits `message`?',
+      criteria: Object.fromEntries(REACTIONS[category].map(line => [line, null])),
+    }])),
+  }, decisionAnswers);
+  const [hazard, probability] = strongest(answers, HAZARDS);
   if (probability >= REJECT_AT) return { destination: 'trash', reaction: TRASH_REACTION, reason: PRIVATE_REASONS[hazard] };
   const category = answers.category.choice;
   const picked = answers[`reaction_${category}`].choice;
   return { destination: category, reaction: REACTIONS[category].includes(picked) ? picked : REACTIONS[category][0] };
+}
+
+export type NameVerdict = { allowed: true } | { allowed: false; reason: string };
+export async function checkName(name: string): Promise<NameVerdict> {
+  // An explicitly labeled local fixture, not production moderation.
+  if (aiMode() === 'demo') return /TRASH/.test(name) ? { allowed: false, reason: 'Demo trash trigger: names containing TRASH test a turned-away name.' } : { allowed: true };
+  const [hazard, probability] = strongest(await systemOne({ name }, yesNo(NAME_HAZARDS), nameAnswers), NAME_HAZARDS);
+  return probability >= REJECT_AT ? { allowed: false, reason: NAME_REASONS[hazard] } : { allowed: true };
 }
