@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { CATEGORIES, type Category } from '../shared/protocol.js';
 import { aiMode } from './ai.js';
 import { startEngine } from './engine.js';
-import { asPublic, binPage, HttpError, progress, snapshot, submit } from './room.js';
+import { approveName, asPublic, binPage, HttpError, progress, snapshot, submit, validPass } from './room.js';
 import { Store } from './store.js';
 import { Presence } from './visitors.js';
 
@@ -29,16 +29,16 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: '8kb' }));
 app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 const rate = new Map<string, { count: number; expires: number }>();
-function limit(key: string, max: number) {
+function limit(key: string, max: number, message = 'You’ve sent a few letters already. Please give Jev a minute.') {
   const now = Date.now();
   const entry = rate.get(key);
   if (!entry || entry.expires < now) { rate.set(key, { count: 1, expires: now + 60_000 }); return; }
-  if (entry.count >= max) throw new HttpError(429, 'You’ve sent a few letters already. Please give Jev a minute.');
+  if (entry.count >= max) throw new HttpError(429, message);
   entry.count++;
 }
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
-const presence = new Presence<WebSocket>();
+const presence = new Presence<WebSocket>(validPass);
 server.on('upgrade', (request, socket, head) => {
   if (request.url !== '/ws') { socket.destroy(); return; }
   if (request.headers.origin) {
@@ -54,9 +54,17 @@ const asyncRoute = (handler: express.RequestHandler): express.RequestHandler => 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.get('/readyz', asyncRoute(async (_req, res) => { await store.healthy(); res.json({ ok: true }); }));
 app.get('/api/room', asyncRoute(async (_req, res) => { res.json(await currentRoom()); }));
+app.post('/api/names', asyncRoute(async (req, res) => {
+  const name = req.body?.name;
+  if (typeof name !== 'string' || name.length > 100) throw new HttpError(400, 'Pick a name with at least one letter or number.');
+  limit(`name:${req.ip || req.socket.remoteAddress || 'unknown'}`, Number(process.env.NAMES_PER_MINUTE || 10), 'That’s a lot of names! Please give Jev a minute.');
+  res.json(await approveName(store, name));
+}));
 app.post('/api/messages', asyncRoute(async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   const submissionId = req.body?.clientSubmissionId;
+  const name = req.body?.name;
+  if (typeof name !== 'string' || !validPass(name, req.body?.namePass)) throw new HttpError(400, 'Tell Jev your name before sending a note.');
   if (!text || [...text].length > 280 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) throw new HttpError(400, 'Write a message between 1 and 280 characters.');
   if (typeof submissionId !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(submissionId)) throw new HttpError(400, 'A valid client submission ID is required.');
   // Retrying a saved submission is idempotent and does not consume another rate-limit slot.
@@ -66,7 +74,7 @@ app.post('/api/messages', asyncRoute(async (req, res) => {
     const session = req.header('x-session-id');
     if (session && /^[a-zA-Z0-9_-]{16,100}$/.test(session)) limit(`session:${session}`, Number(process.env.SUBMISSIONS_PER_MINUTE || 5));
   }
-  res.status(202).json(await submit(store, text, submissionId));
+  res.status(202).json(await submit(store, text, submissionId, name));
 }));
 app.get('/api/submissions/:id', asyncRoute(async (req, res) => { res.json(progress(await store.read(), String(req.params.id), req.header('x-receipt-token') || '')); }));
 app.get('/api/bins/:category/messages', asyncRoute(async (req, res) => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import type { Category } from '../shared/protocol.js';
-import { aiMode, decideMessage, REACTIONS } from './ai.js';
+import { aiMode, checkName, decideMessage, REACTIONS } from './ai.js';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -105,4 +105,26 @@ test('network timeout fails without leaking raw error details', async () => {
   await assert.rejects(decideMessage('hello'), (error: Error) => /in time/.test(error.message) && !error.message.includes('secret'));
   globalThis.fetch = async () => { throw new TypeError('secret diagnostic'); };
   await assert.rejects(decideMessage('hello'), (error: Error) => /could not send/.test(error.message) && !error.message.includes('secret'));
+});
+
+const nameCheck = (obscene: number, attack: number) => ({ model: 'typesafe/jev-1.13-20260917', answers: { obscene: { type: 'noul', noul: obscene }, attack: { type: 'noul', noul: attack } } });
+test('names get their own obscene and attack questions, with the name only as state', async () => {
+  const requests = live([nameCheck(0.03, 0.05)]);
+  assert.deepEqual(await checkName('ADA'), { allowed: true });
+  assert.equal(requests[0].url, 'https://openrouter.ai/api/v1/systemone');
+  assert.deepEqual(requests[0].body.state, { name: 'ADA' });
+  assert.deepEqual(Object.keys(requests[0].body.questions), ['obscene', 'attack']);
+  assert.doesNotMatch(JSON.stringify(requests[0].body.questions), /ADA/);
+});
+test('an obscene or attacking name is turned away with the likelier reason', async () => {
+  live([nameCheck(0.2, 0.91)]);
+  assert.deepEqual(await checkName('FIXTURE'), { allowed: false, reason: 'That name reads like an attack on someone. Please pick a different one.' });
+  live([nameCheck(0.85, 0.4)]);
+  assert.match((await checkName('FIXTURE') as { reason: string }).reason, /name tag/);
+  live([nameCheck(0.69, 0.69)]);
+  assert.deepEqual(await checkName('FIXTURE'), { allowed: true });
+});
+test('a malformed name check fails closed', async () => {
+  live([{ answers: { obscene: { type: 'noul', noul: 0.1 } } }]);
+  await assert.rejects(checkName('ADA'), /invalid decision/);
 });

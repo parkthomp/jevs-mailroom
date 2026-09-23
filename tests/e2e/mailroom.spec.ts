@@ -48,12 +48,25 @@ test('two visitors watch a note get filed and can browse its durable bin history
     await expect(page.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
     await browse(observer, 'Ideas');
     await expect(observer.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
+    // Everyone else sees who sent it.
+    await expect(observer.getByRole('dialog').locator('article', { hasText: note }).getByText('FROM ADA LOVELACE', { exact: true })).toBeVisible();
     await observer.reload();
     await expect(observer.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally { await author.close(); await visitor.close(); }
+});
+
+test('Jev turns away a name he won’t write on a tag, and the visitor can pick another', async ({ page }) => {
+  await page.goto('/');
+  // The local demo turns away names containing TRASH, standing in for obscene or attacking ones.
+  await page.getByRole('textbox', { name: 'Your name' }).fill('trash mouth');
+  await page.getByRole('button', { name: 'Walk in' }).click();
+  await expect(page.getByRole('alert')).toContainText('TRASH');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await enter(page, 'Grace');
+  await expect(page.locator('canvas')).toBeVisible();
 });
 
 test('screened-out envelope gets tossed without exposing its contents to visitors', async ({ page }) => {

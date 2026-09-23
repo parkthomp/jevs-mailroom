@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { BIN_META, CATEGORIES, cleanName, LOOKS, NAME_MAX, type BinPage, type Category, type Facing, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
+import { BIN_META, CATEGORIES, cleanName, LOOKS, NAME_MAX, type BinPage, type Category, type ClientEvent, type Facing, type NamePass, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
 import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP, visitorSprite } from './pixels';
 import type { Spot } from './player';
 import RoomCanvas, { type Move, type Pad } from './RoomCanvas';
@@ -9,7 +9,7 @@ type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress; seen?: 
 // start walking ('walk') or step away from what you used ('leave').
 type Talk = { speaker: 'JEV' | null; line: string; ends?: 'walk' | 'leave' };
 const readingTime = (line: string) => Math.max(4000, 2000 + line.length * 60);
-const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', NAME_KEY = 'jevs-mailroom-name-v1';
+const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-v1', NAME_KEY = 'jevs-mailroom-name-v1', PASS_KEY = 'jevs-mailroom-name-pass-v1';
 // 'failed' is not terminal: the worker keeps retrying it, so the receipt must keep polling.
 const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
@@ -36,8 +36,13 @@ function readLook(): number {
     return look;
   } catch { return Math.floor(Math.random() * LOOKS); }
 }
-function readName(): string | null {
-  try { return cleanName(localStorage.getItem(NAME_KEY) || '').trim() || null; } catch { return null; }
+// Your name tag and Jev's approval of it. A name saved before Jev checked names has no pass yet,
+// so it's only offered back to you to confirm.
+function savedName(): string {
+  try { return cleanName(localStorage.getItem(NAME_KEY) || '').trim(); } catch { return ''; }
+}
+function readName(): NamePass | null {
+  try { const name = savedName(), pass = localStorage.getItem(PASS_KEY); return name && pass ? { name, pass } : null; } catch { return null; }
 }
 function EnvelopeIcon({ className = '' }: { className?: string }) {
   return <Sprite data={ENVELOPE} className={className} />;
@@ -110,7 +115,7 @@ function useRoom() {
     const interval = setInterval(refresh, 10000);
     return () => { stopped = true; clearInterval(interval); clearTimeout(reconnect); socket.current?.close(); };
   }, []);
-  const move = useCallback((next: Move) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'move', ...next })); }, []);
+  const move = useCallback((next: Omit<ClientEvent, 'type'>) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'move', ...next })); }, []);
   return { room, connected, error, selfId, visitors, move };
 }
 
@@ -211,7 +216,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
         {loading && !messages.length && <div className="archive-empty"><span className="loading-dots">···</span><p>Opening the drawer…</p></div>}
         {!loading && !messages.length && !error && <div className="archive-empty"><EnvelopeIcon /><h3>A little room for your thoughts.</h3><p>No messages here yet. Leave Jev a note at the incoming desk and give this bin its first story.</p><button className="text-button" onClick={onCompose}>Write a note <Arrow /></button></div>}
         {messages.map(message => <article key={message.id} className={`message-card ${message.id === highlight ? 'highlighted' : ''}`}>
-          <div className="message-meta"><span>{message.id === highlight ? 'YOUR NOTE' : 'A NOTE FROM SOMEONE'}</span><time dateTime={new Date(message.deliveredAt).toISOString()}>{new Date(message.deliveredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
+          <div className="message-meta"><span>{message.id === highlight ? 'YOUR NOTE' : message.name ? `FROM ${message.name}` : 'A NOTE FROM SOMEONE'}</span><time dateTime={new Date(message.deliveredAt).toISOString()}>{new Date(message.deliveredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
           <p className="message-body">{message.text}</p><div className="jev-reaction"><Sprite data={JEV_FACE} size={2} className="mini-face" /><span>{message.reaction}</span></div>
         </article>)}
         {cursor && <button className="load-more" onClick={loadMore} disabled={loading}>{loading ? 'Opening more mail…' : 'Load more messages'}</button>}
@@ -222,7 +227,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
 }
 
 // The incoming desk: write a note and leave it in the tray for Jev.
-function ComposePanel({ onClose, onSent }: { onClose: () => void; onSent: (receipt: SubmissionReceipt) => void }) {
+function ComposePanel({ identity, onClose, onSent }: { identity: NamePass; onClose: () => void; onSent: (receipt: SubmissionReceipt) => void }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -236,7 +241,7 @@ function ComposePanel({ onClose, onSent }: { onClose: () => void; onSent: (recei
     if (submission.current?.text !== clean) submission.current = { text: clean, id: crypto.randomUUID() };
     setSending(true); setError('');
     try {
-      const receipt = await request<SubmissionReceipt>('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean, clientSubmissionId: submission.current.id }) });
+      const receipt = await request<SubmissionReceipt>('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean, clientSubmissionId: submission.current.id, name: identity.name, namePass: identity.pass }) });
       submission.current = null; onSent(receipt);
     } catch (error) { setError((error as Error).message); setSending(false); }
   };
@@ -272,9 +277,12 @@ function MenuPanel({ room, touch, name, onClose, onCompose, onBin, onRename }: {
   </div>;
 }
 
-// Asks who's visiting before you walk in (and again from the menu). The name rides above your head.
-function NamePanel({ current, look, onClose, onDone }: { current: string | null; look: number; onClose?: () => void; onDone: (name: string) => void }) {
-  const [value, setValue] = useState(current ?? '');
+// Asks who's visiting before you walk in (and again from the menu). Jev checks the name before it
+// rides above your head, and turns away anything obscene or aimed at someone.
+function NamePanel({ current, look, onClose, onDone }: { current: string | null; look: number; onClose?: () => void; onDone: (identity: NamePass) => void }) {
+  const [value, setValue] = useState(() => current ?? savedName());
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
   const panel = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const clean = value.trim();
@@ -284,11 +292,17 @@ function NamePanel({ current, look, onClose, onDone }: { current: string | null;
     <section className="window name-window" ref={panel} role="dialog" aria-modal="true" aria-labelledby="name-title">
       <div className="panel-top"><span className="eyebrow">{current ? 'YOUR NAME TAG' : 'BEFORE YOU COME IN'}</span>{onClose && <button className="icon-button" onClick={onClose} aria-label="Keep your name"><Sprite data={CLOSE} size={2} /></button>}</div>
       <div className="name-heading"><span className="name-avatar"><Sprite data={visitorSprite(look, 'down', false)} size={4} /></span><h2 id="name-title">What’s your name?</h2></div>
-      <form onSubmit={event => { event.preventDefault(); if (clean) onDone(clean); }}>
+      <form onSubmit={async event => {
+        event.preventDefault(); if (!clean || checking) return;
+        setChecking(true); setError('');
+        try { onDone(await request<NamePass>('/api/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: clean }) })); }
+        catch (error) { setError((error as Error).message); setChecking(false); }
+      }}>
         <label htmlFor="visitor-name" className="sr-only">Your name</label>
-        <input id="visitor-name" ref={input} className="name-input" value={value} onChange={event => setValue(cleanName(event.target.value))} maxLength={NAME_MAX} autoComplete="nickname" autoCapitalize="characters" spellCheck={false} placeholder="YOUR NAME" aria-describedby="name-note" />
-        <button className="send-button" type="submit" disabled={!clean}>{current ? 'Save name' : 'Walk in'}</button>
-        <p className="public-note" id="name-note"><Sprite data={EXCLAIM} size={2} /> Everyone in the room can see it. Letters and numbers, up to {NAME_MAX}.</p>
+        <input id="visitor-name" ref={input} className="name-input" value={value} onChange={event => { setValue(cleanName(event.target.value)); setError(''); }} maxLength={NAME_MAX} disabled={checking} autoComplete="nickname" autoCapitalize="characters" spellCheck={false} placeholder="YOUR NAME" aria-describedby="name-note" />
+        <button className="send-button" type="submit" disabled={!clean || checking}>{checking ? 'Jev is checking…' : current ? 'Save name' : 'Walk in'}</button>
+        <p className="public-note" id="name-note"><Sprite data={EXCLAIM} size={2} /> Everyone in the room can see it, and it signs your notes. Letters and numbers, up to {NAME_MAX}.</p>
+        {error && <p className="inline-error" role="alert">{error}</p>}
       </form>
     </section>
   </div>;
@@ -323,14 +337,17 @@ export default function App() {
   const [near, setNear] = useState<Spot | null>(null);
   const [look] = useState(readLook);
   const touch = useTouch();
-  const [name, setName] = useState(readName);
+  const [identity, setIdentity] = useState(readName);
+  const name = identity?.name ?? null;
   const [talk, setTalk] = useState<Talk | null>(null);
   // Your name tag. A first-timer gets Jev's welcome once they've said who they are.
-  const named = useCallback((next: string) => {
-    try { localStorage.setItem(NAME_KEY, next); } catch { /* Private modes ask again next visit. */ }
-    if (!name) setTalk({ speaker: 'JEV', ends: 'walk', line: touch ? `Welcome in, ${next}! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.` : `Welcome in, ${next}! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.` });
-    setName(next); setOverlay(null);
+  const named = useCallback((next: NamePass) => {
+    try { localStorage.setItem(NAME_KEY, next.name); localStorage.setItem(PASS_KEY, next.pass); } catch { /* Private modes ask again next visit. */ }
+    if (!name) setTalk({ speaker: 'JEV', ends: 'walk', line: touch ? `Welcome in, ${next.name}! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.` : `Welcome in, ${next.name}! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.` });
+    setIdentity(next); setOverlay(null);
   }, [name, touch]);
+  // Your character only shows up for others with Jev's approval of its name tag.
+  const moveAs = useCallback((next: Move) => { if (identity) move({ ...next, pass: identity.pass }); }, [identity, move]);
   useEffect(() => {
     if (!talk) return;
     const timer = setTimeout(() => setTalk(current => current === talk ? null : current), readingTime(talk.line));
@@ -401,7 +418,7 @@ export default function App() {
   // On touch screens the text box sits at the top, clear of the floor and the pad.
   const dialogue = talk && !paused && <Dialogue talk={talk} onDismiss={() => setTalk(null)} />;
   return <div className={`game ${touch ? 'touch' : ''}`}>
-    <RoomCanvas room={room} ownIds={ownIds} look={look} name={name} selfId={selfId} visitors={visitors} pad={pad} paused={paused} beacon={beacon} onNearby={nearby} onUse={use} onWalk={walked} onMove={move} />
+    <RoomCanvas room={room} ownIds={ownIds} look={look} name={name} selfId={selfId} visitors={visitors} pad={pad} paused={paused} beacon={beacon} onNearby={nearby} onUse={use} onWalk={walked} onMove={moveAs} />
     {!room && <div className="room-loading">Getting the mailroom ready<span className="loading-dots">…</span></div>}
     <header className="hud-top">
       <h1 className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></h1>
@@ -420,7 +437,7 @@ export default function App() {
     {touch && !paused && <TouchPad pad={pad} onUse={() => { pad.current.use = true; }} />}
     {overlay === 'menu' && <MenuPanel room={room} touch={touch} name={name} onClose={closeWindow} onCompose={compose} onBin={openBin} onRename={() => setOverlay('name')} />}
     {naming && <NamePanel current={name} look={look} onClose={name ? closeWindow : undefined} onDone={named} />}
-    {overlay === 'compose' && <ComposePanel onClose={closeWindow} onSent={sent} />}
+    {overlay === 'compose' && identity && <ComposePanel identity={identity} onClose={closeWindow} onSent={sent} />}
     {selection.category && <HistoryPanel category={selection.category} highlight={selection.message} room={room} onSelect={openBin} onClose={closeBin} onCompose={compose} />}
   </div>;
 }

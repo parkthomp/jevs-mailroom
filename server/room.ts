@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { CATEGORIES, type BinPage, type Category, type PublicMessage, type RoomSnapshot, type SubmissionProgress, type SubmissionReceipt } from '../shared/protocol.js';
+import { CATEGORIES, cleanName, type BinPage, type Category, type PublicMessage, type RoomSnapshot, type NamePass, type SubmissionProgress, type SubmissionReceipt } from '../shared/protocol.js';
+import { checkName, type NameVerdict } from './ai.js';
 import type { State, Store, StoredMessage } from './store.js';
 
 export const TRASH_REACTION = 'This one goes in the trash.';
@@ -7,10 +8,16 @@ export const pending = (message: StoredMessage) => !['delivered', 'discarded'].i
 const secret = () => process.env.RECEIPT_SECRET || 'local-demo-only-receipt-secret-change-in-production';
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const tokenFor = (submissionId: string) => createHmac('sha256', secret()).update(submissionId).digest('base64url');
+// Proof that Jev approved a name, so the socket and the mail tray can trust it without asking him again.
+const passFor = (name: string) => createHmac('sha256', secret()).update(`name:${name}`).digest('base64url');
+export const validPass = (name: string, pass: unknown) => {
+  const expected = Buffer.from(passFor(name)), given = Buffer.from(typeof pass === 'string' ? pass : '');
+  return expected.length === given.length && timingSafeEqual(expected, given);
+};
 export class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 export function asPublic(message: StoredMessage): PublicMessage | null {
   if (message.status !== 'delivered' || !message.deliveredAt || !message.decision || message.decision.destination === 'trash') return null;
-  return { id: message.id, text: message.text, category: message.decision.destination, reaction: message.decision.reaction, createdAt: message.createdAt, deliveredAt: message.deliveredAt };
+  return { id: message.id, name: message.name ?? null, text: message.text, category: message.decision.destination, reaction: message.decision.reaction, createdAt: message.createdAt, deliveredAt: message.deliveredAt };
 }
 export function snapshot(state: State, online: number, mode: 'demo' | 'live'): RoomSnapshot {
   const messages = state.messages.flatMap(message => { const item = asPublic(message); return item ? [item] : []; });
@@ -21,7 +28,31 @@ export function snapshot(state: State, online: number, mode: 'demo' | 'live'): R
     jev: state.jev ?? [],
     recent: messages.sort((a, b) => b.deliveredAt - a.deliveredAt).slice(0, 8) };
 }
-export async function submit(store: Store, text: string, submissionId: string): Promise<SubmissionReceipt> {
+// Counts one call against the daily AI budget, or returns false once it's spent.
+export function spendBudget(state: State): boolean {
+  const date = new Date().toISOString().slice(0, 10);
+  if (state.budget.date !== date) state.budget = { date, calls: 0 };
+  if (state.budget.calls >= Number(process.env.DAILY_AI_LIMIT || 500)) return false;
+  state.budget.calls++;
+  return true;
+}
+// Names come from a tiny alphabet and Jev always judges one the same way, so each is only asked about once.
+const verdicts = new Map<string, NameVerdict>();
+export async function approveName(store: Store, raw: string): Promise<NamePass> {
+  const name = cleanName(raw).trim();
+  if (!name) throw new HttpError(400, 'Pick a name with at least one letter or number.');
+  let verdict = verdicts.get(name);
+  if (!verdict) {
+    if (!await store.mutate(spendBudget)) throw new HttpError(503, 'Jev has checked all the names he can for today. Please try again tomorrow.');
+    try { verdict = await checkName(name); }
+    catch { throw new HttpError(503, 'Jev can’t check names right now. Please try again in a moment.'); }
+    if (verdicts.size >= 5000) verdicts.clear();
+    verdicts.set(name, verdict);
+  }
+  if (!verdict.allowed) throw new HttpError(422, verdict.reason);
+  return { name, pass: passFor(name) };
+}
+export async function submit(store: Store, text: string, submissionId: string, name: string): Promise<SubmissionReceipt> {
   return store.mutate(state => {
     const existing = state.messages.find(message => message.submissionId === submissionId);
     if (existing) {
@@ -30,7 +61,7 @@ export async function submit(store: Store, text: string, submissionId: string): 
     }
     if (state.messages.filter(pending).length >= Number(process.env.MAX_QUEUE || 40)) throw new HttpError(503, 'The mail tray is full. Please try again after Jev catches up.');
     const token = tokenFor(submissionId);
-    const message: StoredMessage = { id: randomUUID(), text, submissionId, tokenHash: hash(token),
+    const message: StoredMessage = { id: randomUUID(), name, text, submissionId, tokenHash: hash(token),
       status: 'pending_review', createdAt: Date.now(), attempts: 0, nextAttemptAt: 0 };
     state.messages.push(message); state.version++;
     return { id: message.id, token, status: message.status };
