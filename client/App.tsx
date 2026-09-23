@@ -5,7 +5,8 @@ import RoomCanvas from './RoomCanvas';
 
 type SavedReceipt = SubmissionReceipt & { progress?: SubmissionProgress };
 const STORAGE_KEY = 'jevs-mailroom-receipts-v1';
-const terminal = new Set(['delivered', 'discarded', 'failed']);
+// 'failed' is not terminal: the worker keeps retrying it, so the receipt must keep polling.
+const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
 const countLabel = (n: number) => `${n} ${n === 1 ? 'message' : 'messages'}`;
 
@@ -75,12 +76,12 @@ function Receipt({ receipt, openBin }: { receipt: SavedReceipt; openBin: (catego
   const status = progress?.status || receipt.status;
   const category = progress?.category;
   const discarded = status === 'discarded', done = status === 'delivered';
-  const labels: Record<string, string> = { pending_review: 'Checking your message', classifying: 'Jev is reading your note', ready: 'Your envelope is in line', ready_to_discard: 'Your envelope is in line', delivering: 'On its way to a bin', discarding: 'Jev is taking out the trash', delivered: category ? `Filed in ${BIN_META[category].label}` : 'Your note has been filed', discarded: 'Jev discarded your message', failed: 'Your note could not be sorted' };
+  const labels: Record<string, string> = { pending_review: 'Checking your message', classifying: 'Jev is reading your note', ready: 'Your envelope is in line', ready_to_discard: 'Your envelope is in line', delivering: 'On its way to a bin', discarding: 'Jev is taking out the trash', delivered: category ? `Filed in ${BIN_META[category].label}` : 'Your note has been filed', discarded: 'Jev discarded your message', failed: 'Jev will try your note again' };
   return <div className={`receipt ${done ? 'receipt-done' : ''}`} aria-live="polite">
     <span className={`receipt-icon ${!terminal.has(status) ? 'receipt-pending' : ''}`}><Sprite data={done ? CHECK : discarded ? TRASH_ICON : ENVELOPE} /></span>
     <div><span className="eyebrow">YOUR LATEST NOTE</span><p>{labels[status] || 'Your envelope is in line'}</p>
       {progress?.queuePosition !== undefined && !terminal.has(status) && <small>Queue position: {progress.queuePosition}</small>}
-      {(discarded || status === 'failed') && <small>{progress?.reason || (discarded ? 'It didn’t meet the public mailroom guidelines.' : 'Please try again in a little while.')}</small>}
+      {(discarded || status === 'failed') && <small>{progress?.reason || (discarded ? 'It didn’t meet the public mailroom guidelines.' : 'Your message is saved and will be retried.')}</small>}
       {done && category && <button className="text-button" onClick={() => openBin(category, receipt.id)}>See your message <Arrow /></button>}
     </div>
   </div>;

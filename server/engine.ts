@@ -49,7 +49,7 @@ export async function startEngine(store: Store) {
         message.reason = decision.destination === 'trash' ? decision.reason || 'This message did not meet the public mailroom guidelines.' : undefined;
         state.version++;
       });
-    } catch {
+    } catch (error) {
       await store.mutate(state => {
         if (!leader || stopping) return;
         const message = state.messages.find(item => item.id === id);
@@ -62,7 +62,9 @@ export async function startEngine(store: Store) {
         }
         state.version++;
       });
-      console.warn(JSON.stringify({ event: 'classification_delayed', id, attempt: claim.attempt }));
+      // decideMessage only throws fixed, sanitized messages (never message text or provider bodies),
+      // so the cause is safe to log. Without it, a bad key or model fails silently forever.
+      console.warn(JSON.stringify({ event: 'classification_delayed', id, attempt: claim.attempt, error: error instanceof Error ? error.message : 'unknown' }));
     }
   };
   const launch = (id: string) => {
