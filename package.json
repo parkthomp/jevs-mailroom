@@ -1,0 +1,42 @@
+{
+  "name": "jevs-mailroom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"tsx watch server/index.ts\" \"vite --host 0.0.0.0\"",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json",
+    "start": "node dist/server/index.js",
+    "worker": "node dist/server/worker.js",
+    "db:migrate": "tsx server/migrate.ts",
+    "test": "tsx --test server/*.test.ts tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bullmq": "^5.58.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "ioredis": "^5.7.0",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "ws": "^8.18.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4"
+  }
+}
