@@ -133,7 +133,6 @@ export default function RoomCanvas({ room, ownIds, onSelect }: { room: RoomSnaps
       for (const x of [279, 283, 287]) rect(x - 1, 103, 1, 14, LIGHT);
       print('TRASH', 282, 126);
       sprite(PLANT, 13, 48); sprite(PLANT, 297, 48);
-      print('EST. TODAY', 160, 149, DARK);
     };
     const draw = (time: number) => {
       const { room: data, ownIds: mine, offset } = state.current;

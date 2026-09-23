@@ -224,9 +224,8 @@ export default function App() {
   // The canvas interpolates exact server timing; this label remains deliberately simple.
   const activity = active ? active.destination === 'trash' ? 'Jev is taking out the trash' : `Jev is sorting a little mail` : room?.queue.length ? 'A few notes are being checked' : 'Jev is ready for your next note';
   return <div className="app-shell">
-    <header className="site-header"><a href="/" className="brand" aria-label="Jev’s Mailroom home"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></a><div className="header-right"><span className="room-live"><span className={`status-dot ${connected ? '' : 'offline'}`} />{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span></div></header>
+    <header className="site-header"><h1 className="brand-heading"><a href="/" className="brand"><span className="brand-mark"><EnvelopeIcon /></span><span>jev’s mailroom<span className="brand-period">.</span></span></a></h1><div className="header-right"><span className="room-live"><span className={`status-dot ${connected ? '' : 'offline'}`} />{connected ? 'THE MAILROOM IS OPEN' : 'CONNECTING TO THE MAILROOM'}</span></div></header>
     <main>
-      <section className="intro"><h1>Every thought has <em>a place.</em></h1><p>Leave a note. Watch Jev find it a home.</p></section>
       <div className="main-layout">
         <section className="mailroom" aria-label="Shared live mailroom">
           <div className="bezel">
