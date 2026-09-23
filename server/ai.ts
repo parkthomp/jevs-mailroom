@@ -58,7 +58,7 @@ async function completion<T>(name: string, model: string, schema: object, valida
   try {
     response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`, 'Content-Type': 'application/json', 'X-Title': 'Jev’s Mailroom' },
+      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`, 'Content-Type': 'application/json', 'X-Title': "Jev's Mailroom" },
       signal: AbortSignal.timeout(timeoutMs()),
       body: JSON.stringify({
         model, max_tokens: 500,
@@ -67,9 +67,10 @@ async function completion<T>(name: string, model: string, schema: object, valida
         messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ untrusted_message: text }) }],
       }),
     });
-  } catch {
+  } catch (error) {
     // Never propagate provider errors that could include a submitted message or credentials.
-    throw new Error('Jev could not reach OpenRouter in time. The message can be retried.');
+    if ((error as Error)?.name === 'TimeoutError') throw new Error('Jev could not reach OpenRouter in time. The message can be retried.');
+    throw new Error('Jev could not send the request to OpenRouter. The message can be retried.');
   }
   if (!response.ok) throw new Error(`OpenRouter returned HTTP ${response.status}. Check the configured model, credits, and API key.`);
   try {

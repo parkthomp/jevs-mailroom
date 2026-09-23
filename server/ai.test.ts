@@ -21,6 +21,8 @@ function live(responses: unknown[]) {
   process.env.OPENROUTER_SCREENING_MODEL = 'test/screener';
   const requests: Record<string, any>[] = [];
   globalThis.fetch = async (_url, init) => {
+    // Real fetch rejects non-ByteString header values (e.g. a curly apostrophe) before sending.
+    new Headers(init?.headers);
     requests.push(JSON.parse(String(init?.body)));
     const content = responses.shift();
     if (content instanceof Response) return content;
@@ -89,6 +91,8 @@ test('provider failures do not leak provider response bodies or silently classif
 });
 test('network timeout fails without leaking raw error details', async () => {
   live([]);
-  globalThis.fetch = async () => { throw new Error('secret diagnostic'); };
+  globalThis.fetch = async () => { throw new DOMException('secret diagnostic', 'TimeoutError'); };
   await assert.rejects(decideMessage('hello'), (error: Error) => /in time/.test(error.message) && !error.message.includes('secret'));
+  globalThis.fetch = async () => { throw new TypeError('secret diagnostic'); };
+  await assert.rejects(decideMessage('hello'), (error: Error) => /could not send/.test(error.message) && !error.message.includes('secret'));
 });
