@@ -8,6 +8,7 @@ import { aiMode } from './ai.js';
 import { startEngine } from './engine.js';
 import { asPublic, binPage, HttpError, progress, snapshot, submit } from './room.js';
 import { Store } from './store.js';
+import { Presence } from './visitors.js';
 
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.DATABASE_URL || !process.env.REDIS_URL) throw new Error('Production requires DATABASE_URL and REDIS_URL.');
@@ -37,6 +38,7 @@ function limit(key: string, max: number) {
 }
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+const presence = new Presence<WebSocket>();
 server.on('upgrade', (request, socket, head) => {
   if (request.url !== '/ws') { socket.destroy(); return; }
   if (request.headers.origin) {
@@ -101,6 +103,10 @@ const send = (socket: WebSocket, data: string) => {
 wss.on('connection', socket => {
   // Join first, then read the durable snapshot. Every event is a full snapshot, so reconnects and gaps are self-healing.
   void currentRoom().then(room => send(socket, JSON.stringify({ type: 'snapshot', room }))).catch(() => socket.close(1013, 'Room unavailable'));
+  send(socket, JSON.stringify({ type: 'hello', id: presence.join(socket) }));
+  send(socket, JSON.stringify({ type: 'visitors', visitors: presence.list() }));
+  socket.on('message', data => { try { presence.move(socket, JSON.parse(String(data))); } catch { /* Ignore anything that isn't a move. */ } });
+  socket.on('close', () => presence.leave(socket));
   socket.on('error', () => {});
   alive.add(socket);
   socket.on('pong', () => alive.add(socket));
@@ -118,6 +124,13 @@ const broadcastTimer = setInterval(async () => {
   } catch { /* A later poll recovers missed state without exposing database errors. */ }
   finally { broadcasting = false; }
 }, 250);
+// Characters move far more often than the room changes, so they travel in their own small updates.
+const visitorsTimer = setInterval(() => {
+  if (!presence.dirty) return;
+  presence.dirty = false;
+  const data = JSON.stringify({ type: 'visitors', visitors: presence.list() });
+  for (const socket of wss.clients) send(socket, data);
+}, 100);
 const heartbeat = setInterval(() => {
   for (const socket of wss.clients) {
     if (!alive.has(socket)) { socket.terminate(); continue; }
@@ -131,7 +144,7 @@ server.listen(port, '0.0.0.0', () => console.log(`Jev’s mailroom listening on 
 let closing = false;
 async function shutdown() {
   if (closing) return; closing = true;
-  clearInterval(broadcastTimer); clearInterval(heartbeat);
+  clearInterval(broadcastTimer); clearInterval(visitorsTimer); clearInterval(heartbeat);
   for (const socket of wss.clients) socket.close(1001, 'Mailroom restarting');
   wss.close();
   server.close();

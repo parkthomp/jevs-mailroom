@@ -2,19 +2,31 @@ import type { Category, Destination, JevLeg, Point } from './protocol.js';
 
 // The room's floor plan in canvas pixels (the room is 320×160). Positions are where Jev's feet land.
 // Shared so the server plans the same walks every visitor draws.
+export const ROOM_W = 320, ROOM_H = 160;
 export const BIN_X: Record<Category, number> = { compliments: 82, ideas: 136, complaints: 190, misc: 244 };
 export const DESK: Point = [160, 108], TRAY: Point = [80, 116], TRASH: Point = [262, 122];
 const CORRIDOR = 56; // The strip of floor in front of the bins.
 const AISLES = [110, 212]; // Either side of the desk.
 // Furniture Jev goes around rather than through, padded by half his width: the desk, the incoming
 // trolley, and the trash can.
-const BLOCKS = [
+export const BLOCKS = [
   { left: 128, right: 192, top: 57, bottom: 86 },
   { left: 16, right: 73, top: 96, bottom: 125 },
   { left: 266, right: 298, top: 94, bottom: 123 },
 ];
 // Places Jev drifts between when there's nothing to sort.
 export const LOUNGE: Point[] = [DESK, [96, 72], [44, 76], [118, 56], [226, 56], [236, 92], [286, 72], [120, 136], [200, 136]];
+
+// Visitors walk the open floor: below the bins, inside the walls, around the furniture and the two
+// potted plants. They come in through the door in the bottom wall.
+const FLOOR = { left: 8, right: 312, top: 50, bottom: 152 };
+const PLANTS = [{ left: 8, right: 28, top: 44, bottom: 62 }, { left: 292, right: 312, top: 44, bottom: 62 }];
+export const DOOR: Point = [160, 159];
+export function walkable([x, y]: Point): boolean {
+  const inside = (box: { left: number; right: number; top: number; bottom: number }) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  const doorway = Math.abs(x - DOOR[0]) <= 10 && y > FLOOR.bottom && y <= DOOR[1];
+  return (inside(FLOOR) || doorway) && !BLOCKS.some(inside) && !PLANTS.some(inside);
+}
 
 export const dropPoint = (destination: Destination): Point => destination === 'trash' ? TRASH : [BIN_X[destination], CORRIDOR];
 export const samePoint = (a: Point, b: Point) => a[0] === b[0] && a[1] === b[1];
