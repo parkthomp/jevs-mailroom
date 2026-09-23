@@ -134,13 +134,6 @@ export default function RoomCanvas(props: Props) {
       if (lit) rect(Math.round(centerX - (value.length * 4 - 1) / 2) - 2, y - 2, value.length * 4 + 3, 9, INK);
       print(value, centerX, y, lit ? PAPER : INK);
     };
-    // A name tag over a character's head, kept inside the room: yours dark, everyone else's light.
-    const tag = (name: string, x: number, top: number, own: boolean) => {
-      const w = name.length * 4 + 3, left = Math.max(2, Math.min(W - 2 - w, x - Math.floor(w / 2)));
-      rect(left, top, w, 9, INK);
-      if (!own) rect(left + 1, top + 1, w - 2, 7, PAPER);
-      print(name, left + w / 2, top + 2, own ? PAPER : INK);
-    };
     const drawRoom = (data: RoomSnapshot | null, mine: string[], tray: { id: string }[], lit: (spot: Spot) => boolean) => {
       // Wall, baseboard, and a tiled floor inside a dark frame, with a doorway in the bottom wall.
       rect(0, 0, W, H, PAPER);
@@ -285,10 +278,10 @@ export default function RoomCanvas(props: Props) {
         sprite(jevSprite(jevFacing, jevStep), x - 6, y - 16 - bob);
         if (carried) sprite(mine.includes(carried) ? ENVELOPE_OWN : ENVELOPE, x - 4, y - 23 - bob);
       } }];
-      const tags: (() => void)[] = [];
+      const tags: { name: string; x: number; y: number; own: boolean }[] = [];
       const character = (vx: number, vy: number, name: string | null, look: number, facing: Facing, walking: boolean, own: boolean) => {
         const stepping = walking && Math.floor(time / 130) % 2 === 1, px = Math.round(vx), py = Math.round(vy);
-        if (name) tags.push(() => tag(name, px, py - 27, own));
+        if (name) tags.push({ name, x: px, y: py + 3, own });
         return { y: py, draw: () => { rect(px - 5, py - 2, 10, 3, LIGHT); sprite(visitorSprite(look, facing, stepping), px - 6, py - 16 - (stepping ? 1 : 0)); } };
       };
       const seen = new Set<string>(), names: string[] = [];
@@ -304,8 +297,6 @@ export default function RoomCanvas(props: Props) {
       for (const id of others.keys()) if (!seen.has(id)) others.delete(id);
       people.push(character(me.x, me.y, p.name, p.look, me.facing, me.moving, true));
       people.sort((a, b) => a.y - b.y).forEach(person => person.draw());
-      // Name tags go over everyone, with yours drawn last so it's never hidden.
-      tags.forEach(draw => draw());
 
       if (flight && flight.t < 1) {
         const t = Math.max(0, flight.t);
@@ -322,6 +313,25 @@ export default function RoomCanvas(props: Props) {
       screen.fillStyle = INK; screen.fillRect(0, 0, el.width, el.height);
       screen.imageSmoothingEnabled = false;
       screen.drawImage(off, view.ox, view.oy, rw, rh);
+      // Names sit below the characters and are drawn at half the room's pixel scale, so they stay
+      // crisp without competing with the characters. Yours is dark and is drawn last.
+      const unit = Math.max(window.devicePixelRatio || 1, Math.floor(view.scale / 2));
+      for (const tag of tags) {
+        const textWidth = (tag.name.length * 4 - 1) * unit, width = textWidth + 2 * unit, height = 7 * unit;
+        const roomLeft = view.ox + 2 * view.scale, roomRight = view.ox + (W - 2) * view.scale;
+        const roomTop = view.oy + 2 * view.scale, roomBottom = view.oy + (H - 2) * view.scale;
+        const left = Math.round(Math.max(roomLeft, Math.min(roomRight - width, view.ox + tag.x * view.scale - width / 2)));
+        const top = Math.round(Math.max(roomTop, Math.min(roomBottom - height, view.oy + tag.y * view.scale)));
+        screen.fillStyle = INK; screen.fillRect(left, top, width, height);
+        if (!tag.own) { screen.fillStyle = PAPER; screen.fillRect(left + unit, top + unit, width - 2 * unit, height - 2 * unit); }
+        screen.fillStyle = tag.own ? PAPER : INK;
+        let letterX = left + unit;
+        for (const char of tag.name) {
+          const glyph = FONT[char] ?? FONT[' '];
+          for (let i = 0; i < 15; i++) if (glyph[i] === '1') screen.fillRect(letterX + i % 3 * unit, top + unit + Math.floor(i / 3) * unit, unit, unit);
+          letterX += 4 * unit;
+        }
+      }
 
       // Exposes positions for end-to-end checks; updated only when they change.
       const report = { jevX: String(x), playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size), names: names.join(',') };
