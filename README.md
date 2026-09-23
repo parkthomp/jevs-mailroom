@@ -2,7 +2,7 @@
 
 A shared pixel-art mailroom. Leave Jev a short message, watch him carry the envelope to **Compliments, Ideas, Complaints, or Misc**, then open a bin to read its messages. Screened-out messages get a visible toss into the trash; their contents stay private. There are no correction or recategorization controls.
 
-React and Canvas draw the room. An Express/WebSocket server shares its state, and a worker asks OpenRouter to screen messages, classify them, and write Jev’s reactions. The server controls delivery timing so every visitor watches the same Jev.
+React and Canvas draw the room. An Express/WebSocket server shares its state, and a worker asks [Jev](https://openrouter.ai/typesafe/jev-1.13), TypeSafe’s decision model, through OpenRouter to screen messages, pick their bin, and pick Jev’s reaction. The server controls delivery timing so every visitor watches the same Jev.
 
 ## Run locally
 
@@ -20,12 +20,12 @@ To use real Jev, set these server-only values in `.env`, then restart:
 
 ```dotenv
 OPENROUTER_API_KEY=your-key
-OPENROUTER_MODEL=your-chosen-model-id
+OPENROUTER_MODEL=typesafe/jev-1.13
 ```
 
-Choose an [OpenRouter model endpoint with structured-output support](https://openrouter.ai/docs/guides/features/structured-outputs). The model is intentionally not hardcoded. `OPENROUTER_SCREENING_MODEL` can select a separate screening model; otherwise the same model is used. Never prefix these secrets with `VITE_` or put them in frontend code.
+The model must be a System One decision model called through OpenRouter’s [System One API](https://openrouter.ai/docs/guides/community/typesafe-sdk) (`POST /api/v1/systemone`); ordinary chat models will not work. Never prefix these secrets with `VITE_` or put them in frontend code.
 
-Live sorting makes up to three calls per attempt: submission screening, category/reaction generation, and reaction screening. Rejected submissions stop after screening. If a generated reaction cannot be approved, Jev uses a fixed acknowledgment. Provider failures leave the submission waiting for worker retry instead of silently filing or discarding it. Retries back off, with at most five attempts per message per UTC day before holding it until the next day. A request timeout defaults to 15 seconds and is capped at 30 seconds. Production refuses to start without live AI credentials and a model.
+Live sorting makes one call per attempt. The message is sent only as state, alongside typed questions: one yes/no question per screening hazard, a choice of bin, and a choice of reaction for each bin. A hazard at or above 70% probability sends the envelope to the trash. Jev does not write text, so every reaction comes from the pre-written list in `server/ai.ts`. Provider failures leave the submission waiting for worker retry instead of silently filing or discarding it. Retries back off, with at most five attempts per message per UTC day before holding it until the next day. A request timeout defaults to 15 seconds and is capped at 30 seconds. Production refuses to start without live AI credentials and a model.
 
 ## Local Postgres and queue
 
@@ -55,8 +55,7 @@ This can use demo AI while `NODE_ENV` is not `production`, or real OpenRouter cr
 | Variable | Default / purpose |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Server-only OpenRouter credential; required in production |
-| `OPENROUTER_MODEL` | Model ID with structured-output support; required for live mode |
-| `OPENROUTER_SCREENING_MODEL` | Optional separate screening model |
+| `OPENROUTER_MODEL` | System One model ID, e.g. `typesafe/jev-1.13`; required for live mode |
 | `OPENROUTER_TIMEOUT_MS` | `15000`; each API request is capped at 30 seconds |
 | `AI_MODE` | Auto-detected; optional `live` or development-only `demo` |
 | `DATABASE_URL` | Postgres connection; required in production |
@@ -80,7 +79,7 @@ This can use demo AI while `NODE_ENV` is not `production`, or real OpenRouter cr
 4. Review and deploy. Both services build with `npm ci --include=dev && npm run build` and run the idempotent migration before starting.
 5. Open the web URL in two browsers. Submit a message, watch the same delivery in both, open its bin, and refresh to verify saved history. Check `/healthz` (process) and `/readyz` (storage), then restart the worker during a delivery and confirm the room recovers. Queue outages do not fail readiness because the coordinator can reconcile pending work from Postgres.
 
-For a separate screening model, add `OPENROUTER_SCREENING_MODEL` to the worker’s environment. When changing Blueprint-referenced credentials or model settings, resync the Blueprint so the worker receives the new values. Keep `RECEIPT_SECRET` stable so existing sender receipts continue to work. Do not use the local JSON store on an ephemeral production filesystem.
+When changing Blueprint-referenced credentials or model settings, resync the Blueprint so the worker receives the new values. Keep `RECEIPT_SECRET` stable so existing sender receipts continue to work. Do not use the local JSON store on an ephemeral production filesystem.
 
 The repository contains deployment configuration; creating or deploying these services still requires your Render account. Render’s [Blueprint reference](https://render.com/docs/blueprint-spec) describes the service wiring and [WebSocket documentation](https://render.com/docs/websocket) describes long-lived client connections.
 
@@ -93,7 +92,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-AI unit tests mock OpenRouter and do not spend credits. They cover schema rejection, private discard results, preservation of negative feedback, reaction fallback, and provider errors. Live model quality and real Render restart behavior should be checked after configuring credentials and deploying.
+AI unit tests mock OpenRouter and do not spend credits. They cover the request shape, answer validation, private discard results, the screening threshold, preservation of negative feedback, reaction fallback, and provider errors. Live model quality and real Render restart behavior should be checked after configuring credentials and deploying.
 
 ## Publication behavior
 
@@ -106,6 +105,14 @@ npx tsx server/remove-message.ts <message-id>
 ```
 
 This deletes that stored message; it does not move it between bins. There is no public moderation control.
+
+After fixing an AI configuration problem, messages that used up their five daily attempts can be released for an immediate retry:
+
+```sh
+npx tsx server/retry-held.ts
+```
+
+On Render, run `node dist/server/retry-held.js` as a one-off job on the worker.
 
 This MVP stores the single room in a transactional Postgres JSONB row and broadcasts complete snapshots. Pending records serve as a durable work outbox, with periodic reconciliation recovering lost queue hints. This favors simple recovery for a small demo; a busy room with a large archive should move messages into indexed rows and use incremental notifications before scaling horizontally.
 
