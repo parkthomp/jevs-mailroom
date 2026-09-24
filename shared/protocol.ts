@@ -30,13 +30,14 @@ export interface ActiveDelivery {
 export type Point = readonly [number, number];
 // One stretch of Jev's plan. Legs follow on from each other, and every visitor draws the same ones.
 export interface JevLeg {
-  kind: 'run' | 'walk' | 'wait' | 'drop' | 'rest';
-  path: Point[]; // A single point for wait, drop, and rest.
+  kind: 'run' | 'walk' | 'wait' | 'drop' | 'rest' | 'chat';
+  path: Point[]; // A single point for wait, drop, rest, and chat.
   from: number;
   to: number | null; // null: until something new comes in.
   carrying?: string; // Id of the envelope in Jev's hands.
   destination?: Destination;
   say?: string; // Speech bubble text.
+  facing?: Facing; // Who Jev turns to while chatting.
 }
 export interface RoomSnapshot {
   version: number;
@@ -79,5 +80,5 @@ export type ServerEvent =
   | { type: 'visitors'; visitors: Visitor[] };
 // A name Jev has approved, with the server's proof of it. Characters and notes need one.
 export interface NamePass { name: string; pass: string }
-export type ClientEvent = { type: 'move'; pass: string } & Omit<Visitor, 'id'>;
+export type ClientEvent = ({ type: 'move'; pass: string } & Omit<Visitor, 'id'>) | { type: 'talk' };
 export interface JevDecision { destination: Destination; reaction: string; reason?: string }

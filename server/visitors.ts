@@ -1,19 +1,19 @@
 import { randomBytes } from 'node:crypto';
-import { cleanName, FACINGS, LOOKS, type Facing, type Visitor } from '../shared/protocol.js';
+import { cleanName, FACINGS, LOOKS, type Facing, type Point, type Visitor } from '../shared/protocol.js';
 import { ROOM_H, ROOM_W } from '../shared/walk.js';
 
 // Where each visitor's character is standing. Kept in memory on the web server only: positions are
 // throwaway, so after a restart everyone simply walks back in. Nothing here is ever stored or typed
 // by a visitor except a short name tag, limited to the capitals, digits, and few marks the room's
 // pixel font can draw, and shown only with proof that Jev approved it.
-const MAX_SHOWN = 60, MAX_MOVES_PER_SECOND = 20;
+const MAX_SHOWN = 60, MAX_MOVES_PER_SECOND = 20, TALK_EVERY_MS = 1000;
 export class Presence<Socket extends object> {
-  private visitors = new Map<Socket, { id: string; visitor: Visitor | null; window: number; moves: number }>();
+  private visitors = new Map<Socket, { id: string; visitor: Visitor | null; window: number; moves: number; talked: number }>();
   dirty = false;
   constructor(private approved: (name: string, pass: unknown) => boolean) {}
   join(socket: Socket): string {
     const id = randomBytes(6).toString('base64url');
-    this.visitors.set(socket, { id, visitor: null, window: 0, moves: 0 });
+    this.visitors.set(socket, { id, visitor: null, window: 0, moves: 0, talked: 0 });
     return id;
   }
   leave(socket: Socket) {
@@ -35,6 +35,14 @@ export class Presence<Socket extends object> {
     entry.visitor = { id: entry.id, name: tag, x: clamp(x, ROOM_W), y: clamp(y, ROOM_H), facing: facing as Facing, look: look as number, moving };
     this.dirty = true;
     return true;
+  }
+  // Where a visitor who wants to talk to Jev is standing, going by the server's copy rather than
+  // anything in the request. Null before they've walked in, or if they asked again too soon.
+  talk(socket: Socket, now = Date.now()): Point | null {
+    const entry = this.visitors.get(socket);
+    if (!entry?.visitor || now - entry.talked < TALK_EVERY_MS) return null;
+    entry.talked = now;
+    return [entry.visitor.x, entry.visitor.y];
   }
   list(): Visitor[] {
     return [...this.visitors.values()].flatMap(entry => entry.visitor ? [entry.visitor] : []).slice(0, MAX_SHOWN);

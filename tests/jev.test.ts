@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Destination, JevLeg } from '../shared/protocol.js';
 import { DESK, dropPoint, jevAt, samePoint, TRAY } from '../shared/walk.js';
-import { planJev } from '../server/jev.js';
+import { CHAT_LINES, CHAT_MS, chatWithJev, planJev } from '../server/jev.js';
 import type { State, StoredMessage } from '../server/store.js';
 
 const room = (): State => ({ version: 1, messages: [], active: null, jev: [], budget: { date: '', calls: 0 } });
@@ -130,4 +130,53 @@ test('when a note fails to sort, Jev stops waiting and strolls off', () => {
   const stroll = state.jev!.find(leg => leg.from === 2000)!;
   assert.equal(stroll.kind, 'walk');
   assert.deepEqual(stroll.path[0], TRAY);
+});
+
+test('a visitor next to Jev gets him to stop, turn to them, and chat for five seconds', () => {
+  const state = room();
+  planJev(state, 0);
+  const [stroll] = state.jev!;
+  const now = (stroll.from + stroll.to!) / 2, [x, y] = jevAt(state.jev!, now).point;
+  assert.equal(chatWithJev(state, [x + 200, y], now), false, 'too far away to hear');
+  assert.ok(chatWithJev(state, [x + 12, y], now, () => 0));
+  assertContinuous(state.jev!);
+  const chat = state.jev!.at(-1)!;
+  assert.equal(chat.kind, 'chat');
+  assert.ok(chat.from > now && chat.from - now <= 300, 'he finishes his step before stopping');
+  assert.equal(chat.to! - chat.from, CHAT_MS);
+  const [dx, dy] = [x + 12 - chat.path[0][0], y - chat.path[0][1]];
+  assert.equal(chat.facing, Math.abs(dx) >= Math.abs(dy) ? dx >= 0 ? 'right' : 'left' : dy >= 0 ? 'down' : 'up', 'he turns to face them');
+  assert.equal(chat.say, CHAT_LINES[0]);
+  assert.equal(chatWithJev(state, [x + 12, y], chat.from + 1), false, 'one chat at a time');
+  planJev(state, chat.from + 1000);
+  assert.deepEqual(state.jev!.at(-1), chat, 'no wandering off mid-sentence');
+  // Once he's said his piece he strolls on, from the spot where he stopped.
+  planJev(state, chat.to!);
+  assertContinuous(state.jev!);
+  assert.equal(state.jev!.find(leg => leg.from === chat.to)?.kind, 'walk');
+  // And he doesn't say the same thing twice in a row.
+  const [nx, ny] = jevAt(state.jev!, chat.to! + 100).point;
+  assert.ok(chatWithJev(state, [nx, ny + 12], chat.to! + 100, () => 0));
+  assert.equal(state.jev!.at(-1)!.say, CHAT_LINES[1]);
+  assert.equal(state.jev!.at(-1)!.facing, 'down');
+});
+
+test('Jev is too busy to chat with mail to sort, and new mail cuts a chat short', () => {
+  const state = room();
+  const message = note('a', 0);
+  state.messages.push(message);
+  planJev(state, 0);
+  const [x, y] = jevAt(state.jev!, 100).point;
+  assert.equal(chatWithJev(state, [x, y + 10], 100), false);
+
+  const idle = room();
+  planJev(idle, 0);
+  const at = jevAt(idle.jev!, 0).point;
+  assert.ok(chatWithJev(idle, [at[0], at[1] + 10], 0));
+  const chat = idle.jev!.at(-1)!;
+  idle.messages.push(note('b', chat.from + 1000));
+  planJev(idle, chat.from + 1000);
+  assertContinuous(idle.jev!);
+  assert.equal(idle.jev!.find(leg => leg.kind === 'chat')!.to, chat.from + 1000, 'he drops the chat to fetch the note');
+  assert.equal(idle.jev!.at(-1)!.kind, 'wait');
 });

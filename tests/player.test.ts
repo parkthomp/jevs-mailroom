@@ -50,6 +50,10 @@ test('presence shares well-formed moves with approved names only, at a limited r
   for (let i = 1; i < 20; i++) assert.equal(presence.move(socket, move, 500), true);
   assert.equal(presence.move(socket, move, 900), false, 'more than 20 moves a second are dropped');
   assert.equal(presence.move(socket, move, 1000), true);
+  assert.equal(presence.talk(lurker, 1000), null, 'only someone standing in the room can talk to Jev');
+  assert.deepEqual(presence.talk(socket, 1000), [100, 160], 'talking goes by where the server last saw you');
+  assert.equal(presence.talk(socket, 1500), null, 'no more than once a second');
+  assert.deepEqual(presence.talk(socket, 2000), [100, 160]);
   presence.dirty = false;
   presence.leave(socket);
   assert.equal(presence.dirty, true);

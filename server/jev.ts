@@ -1,5 +1,5 @@
-import type { Destination, JevLeg, Point } from '../shared/protocol.js';
-import { DESK, dropPoint, LOUNGE, pathLength, partial, route, TRAY } from '../shared/walk.js';
+import type { Destination, Facing, JevLeg, Point } from '../shared/protocol.js';
+import { chatty, DESK, dropPoint, jevAt, LOUNGE, pathLength, partial, route, TALK_RANGE, TRAY } from '../shared/walk.js';
 import { TRASH_REACTION } from './room.js';
 import type { State } from './store.js';
 
@@ -17,6 +17,20 @@ const INCOMING = ['pending_review', 'classifying', 'ready', 'ready_to_discard'];
 function travel(kind: 'run' | 'walk', from: Point, to: Point, start: number, extra: Partial<JevLeg> = {}): JevLeg | null {
   const path = route(from, to), length = pathLength(path);
   return length ? { kind, path, from: start, to: start + length / (kind === 'run' ? RUN : WALK), ...extra } : null;
+}
+
+// Jev's plan cut off at time t, and where that leaves him standing.
+function haltAt(legs: readonly JevLeg[], t: number): { legs: JevLeg[]; point: Point } {
+  const kept: JevLeg[] = [];
+  let point = legs.length ? legs[0].path[0] : DESK;
+  for (const leg of legs) {
+    if (leg.from >= t) break;
+    if (leg.to !== null && leg.to <= t) { kept.push(leg); point = leg.path.at(-1)!; continue; }
+    const path = leg.to === null || leg.path.length < 2 ? leg.path : partial(leg.path, (t - leg.from) / Math.max(1, leg.to - leg.from));
+    kept.push({ ...leg, path, to: t }); point = path.at(-1)!;
+    break;
+  }
+  return { legs: kept, point };
 }
 
 // Advances the shared room by one step: files the note in hand, sends Jev after the next one the
@@ -45,19 +59,7 @@ export function planJev(state: State, now: number, random = Math.random): boolea
   }
 
   // Stops Jev where he is right now, dropping the rest of his plan.
-  const halt = (): Point => {
-    const kept: JevLeg[] = [];
-    let point = legs.length ? legs[0].path[0] : DESK;
-    for (const leg of legs) {
-      if (leg.from >= now) break;
-      if (leg.to !== null && leg.to <= now) { kept.push(leg); point = leg.path.at(-1)!; continue; }
-      const path = leg.to === null || leg.path.length < 2 ? leg.path : partial(leg.path, (now - leg.from) / Math.max(1, leg.to - leg.from));
-      kept.push({ ...leg, path, to: now }); point = path.at(-1)!;
-      break;
-    }
-    legs = kept;
-    return point;
-  };
+  const halt = (): Point => { const stopped = haltAt(legs, now); legs = stopped.legs; return stopped.point; };
   const last = legs.at(-1);
   const incoming = state.messages.filter(message => INCOMING.includes(message.status));
   const ready = incoming.find(message => message.decision && ['ready', 'ready_to_discard'].includes(message.status));
@@ -95,4 +97,33 @@ export function planJev(state: State, now: number, random = Math.random): boolea
     legs.push({ kind: 'rest', path: [spot], from: start, to: start + 1000 + random() * 3000 });
   }
   return finish();
+}
+
+export const CHAT_MS = 5000;
+export const CHAT_LINES = [
+  'ONLY A SITH DEALS IN ABSOLUTES', 'I HEAR PARKER IS A GREAT TEAM MEMBER', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP',
+  'HELLO THERE', 'RENDER IS MY HOME', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL',
+];
+// Room for the visitor and Jev to have moved a little since the visitor's last reported position.
+const CHAT_SLACK = 16;
+// Jev stops this far ahead, so visitors see him finish his step instead of snapping back to where the server caught him.
+const CHAT_LEAD = 300;
+
+// A visitor standing next to Jev says hi: if he's only milling about, he stops, turns to them, and says
+// something for a few seconds before wandering on. Returns whether he stopped to chat.
+export function chatWithJev(state: State, visitor: Point, now: number, random = Math.random): boolean {
+  const legs = state.jev ?? [], at = now + CHAT_LEAD, { point, leg } = jevAt(legs, now);
+  if (state.active || state.messages.some(message => INCOMING.includes(message.status))) return false;
+  if (!chatty(leg) || !chatty(jevAt(legs, at).leg)) return false;
+  if (Math.hypot(visitor[0] - point[0], visitor[1] - point[1]) > TALK_RANGE + CHAT_SLACK) return false;
+  const stopped = haltAt(legs, at), [dx, dy] = [visitor[0] - stopped.point[0], visitor[1] - stopped.point[1]];
+  const facing: Facing = Math.abs(dx) >= Math.abs(dy) ? dx >= 0 ? 'right' : 'left' : dy >= 0 ? 'down' : 'up';
+  // Never the same line twice in a row.
+  const lines = CHAT_LINES.filter(line => !legs.some(item => item.kind === 'chat' && item.say === line));
+  const say = lines[Math.floor(random() * lines.length)];
+  // If his plan runs out sooner (standing about, waiting for his next stroll), he starts right then.
+  const from = Math.max(now, Math.min(at, stopped.legs.at(-1)?.to ?? now));
+  state.jev = [...stopped.legs, { kind: 'chat', path: [stopped.point], from, to: from + CHAT_MS, say, facing }];
+  state.version++;
+  return true;
 }

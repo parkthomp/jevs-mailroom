@@ -21,6 +21,9 @@ export const LOUNGE: Point[] = [DESK, [96, 72], [44, 76], [118, 56], [226, 56], 
 const FLOOR = { left: 8, right: 312, top: 50, bottom: 152 };
 const PLANTS = [{ left: 8, right: 28, top: 44, bottom: 62 }, { left: 292, right: 312, top: 44, bottom: 62 }];
 export const DOOR: Point = [160, 159];
+// How close, feet to feet, you stand to talk to Jev. He chats while milling about, never mid-delivery.
+export const TALK_RANGE = 24;
+export const chatty = (leg?: JevLeg) => !leg || leg.kind === 'walk' || leg.kind === 'rest';
 export function walkable([x, y]: Point): boolean {
   const inside = (box: { left: number; right: number; top: number; bottom: number }) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
   const doorway = Math.abs(x - DOOR[0]) <= 10 && y > FLOOR.bottom && y <= DOOR[1];

@@ -1,8 +1,8 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { BIN_META, CATEGORIES, type Category, type Facing, type Point, type RoomSnapshot, type Visitor } from '../shared/protocol';
-import { BIN_WIDTH, BIN_X, DOOR, jevAt, ROOM_H as H, ROOM_W as W, route } from '../shared/walk';
+import { BIN_WIDTH, BIN_X, chatty, DESK, DOOR, jevAt, ROOM_H as H, ROOM_W as W, route } from '../shared/walk';
 import { ENVELOPE, ENVELOPE_OWN, FONT, jevSprite, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
-import { canUse, clicked, facingFor, nearby, sameSpot, SPEED, step, toward, type Spot } from './player';
+import { canUse, clicked, facingFor, nearby, nearJev, onJev, sameSpot, SPEED, step, toward, type Spot } from './player';
 
 const [INK, DARK, LIGHT, PAPER] = PALETTE;
 // Screen space, in CSS pixels, taken by the HUD at the top and the touch pad at the bottom.
@@ -72,7 +72,7 @@ export default function RoomCanvas(props: Props) {
     // Your character comes in through the door and takes a few steps into the room.
     const me = { x: DOOR[0] + Math.round(Math.random() * 12 - 6), y: DOOR[1], facing: 'up' as Facing, moving: false };
     let auto: { path: Point[]; use?: Spot; entrance?: boolean } | null = { path: [[me.x, 138]], entrance: true };
-    let jevFacing: Facing = 'down', camera: Point = [me.x, me.y], shown: Spot | null = null, sent = '', sentAt = 0, sentTo: string | null = null, wasMoving = false, useKey = false;
+    let jevFacing: Facing = 'down', jevNow: Point = DESK, jevFree = false, camera: Point = [me.x, me.y], shown: Spot | null = null, sent = '', sentAt = 0, sentTo: string | null = null, wasMoving = false, useKey = false;
     const others = new Map<string, { x: number; y: number }>();
     const keys = new Set<Facing>();
 
@@ -171,20 +171,26 @@ export default function RoomCanvas(props: Props) {
       sprite(PLANT, 13, 48); sprite(PLANT, 297, 48);
     };
 
-    // Clicking the floor walks you there; clicking a bin, the desk, the trash, or Jev walks you over and uses it.
+    // Clicking the floor walks you there; clicking a bin, the desk, the trash, or Jev walks you over and uses it (or says hi).
     const toRoom = (event: PointerEvent): Point => {
       const dpr = window.devicePixelRatio || 1, bounds = el.getBoundingClientRect();
       return [((event.clientX - bounds.left) * dpr - view.ox) / view.scale, ((event.clientY - bounds.top) * dpr - view.oy) / view.scale];
     };
     const pointerdown = (event: PointerEvent) => {
       if (latest.current.paused || event.button !== 0) return;
-      const point = toRoom(event), place = clicked(point), feet: Point = [me.x, me.y];
+      const point = toRoom(event), place = clicked(point), feet: Point = [me.x, me.y], from: Point = [Math.round(me.x), Math.round(me.y)];
+      // Jev stands in front of everything else. Walking over, you stop to say hi once you're close enough.
+      if (onJev(point, jevNow)) {
+        if (jevFree && nearJev(feet, jevNow)) latest.current.onUse({ kind: 'jev' });
+        else auto = { path: [from, ...route(from, [Math.round(jevNow[0]), Math.round(jevNow[1])]).slice(1)], use: { kind: 'jev' } };
+        return;
+      }
       if (place && canUse(feet, place)) { latest.current.onUse(place.spot); return; }
       const goal: Point = place ? place.approach : [Math.round(point[0]), Math.round(point[1])];
-      const path = route([Math.round(me.x), Math.round(me.y)], goal).slice(1);
-      auto = { path: [[Math.round(me.x), Math.round(me.y)], ...path], use: place?.spot };
+      const path = route(from, goal).slice(1);
+      auto = { path: [from, ...path], use: place?.spot };
     };
-    const pointermove = (event: PointerEvent) => { el.style.cursor = clicked(toRoom(event)) ? 'pointer' : 'default'; };
+    const pointermove = (event: PointerEvent) => { const point = toRoom(event); el.style.cursor = clicked(point) || onJev(point, jevNow) ? 'pointer' : 'default'; };
     el.addEventListener('pointerdown', pointerdown);
     el.addEventListener('pointermove', pointermove);
 
@@ -194,6 +200,10 @@ export default function RoomCanvas(props: Props) {
       const dt = Math.max(0, Math.min(.05, (time - last) / 1000)); last = time;
       const now = Date.now() + (offset.current ?? 0), reduced = media.matches, legs = data?.jev ?? [];
       const jev = jevAt(legs, now);
+      // Jev chats while he's milling about, but not with mail waiting or on its way.
+      jevFree = !!data && !data.active && !data.queue.length && chatty(jev.leg);
+      jevNow = jev.point;
+      if (auto?.use?.kind === 'jev' && !p.paused && jevFree && nearJev([me.x, me.y], jev.point)) { auto = null; p.onUse({ kind: 'jev' }); }
 
       // Move your character: held keys and the pad first, then any walk you clicked for.
       const held = new Set([...keys, ...(p.pad.current?.held ?? [])]);
@@ -224,8 +234,8 @@ export default function RoomCanvas(props: Props) {
       me.moving = me.x !== before[0] || me.y !== before[1];
       if (me.moving && !wasMoving && !auto?.entrance) p.onWalk();
       wasMoving = me.moving;
-      const place = nearby([me.x, me.y]);
-      if (!sameSpot(place?.spot ?? null, shown)) { shown = place?.spot ?? null; p.onNearby(shown); }
+      const here: Spot | null = jevFree && nearJev([me.x, me.y], jev.point) ? { kind: 'jev' } : nearby([me.x, me.y])?.spot ?? null;
+      if (!sameSpot(here, shown)) { shown = here; p.onNearby(shown); }
       const pad = p.pad.current;
       if ((useKey || pad?.use) && !p.paused) p.onUse(shown);
       useKey = false; if (pad) pad.use = false;
@@ -238,7 +248,7 @@ export default function RoomCanvas(props: Props) {
       const unclaimed = legs.filter(leg => leg.kind === 'run' && leg.carrying && leg.from > now).map(leg => ({ id: leg.carrying! }));
       const blink = reduced || Math.floor(time / 500) % 2 === 0;
       const beacon: Spot | null = p.beacon ? { kind: 'bin', category: p.beacon } : null;
-      drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])], spot => (!p.paused && sameSpot(spot, place?.spot ?? null)) || (blink && sameSpot(spot, beacon)));
+      drawRoom(data, mine, [...unclaimed, ...(data?.queue || [])], spot => (!p.paused && sameSpot(spot, shown)) || (blink && sameSpot(spot, beacon)));
       const { leg } = jev;
       const moving = !!leg && (leg.kind === 'run' || leg.kind === 'walk'), running = leg?.kind === 'run';
       const position = reduced && moving ? leg.path.at(-1)! : jev.point;
@@ -252,10 +262,10 @@ export default function RoomCanvas(props: Props) {
       const jevStep = moving && !reduced && Math.floor(time / (running ? 70 : 140)) % 2 === 1;
       const x = Math.round(position[0]), y = Math.round(position[1]), bob = jevStep ? 1 : 0;
       // Which way Jev is headed; at a corner he keeps facing the way he was going. Standing still, he
-      // faces the bin or can he's dropping into, the desk he's waiting at, or the room.
+      // faces the bin or can he's dropping into, the desk he's waiting at, whoever he's chatting with, or the room.
       const behind = jevAt(legs, now - 40).point, sx = Math.sign(Math.round(jev.point[0] - behind[0])), sy = Math.sign(Math.round(jev.point[1] - behind[1]));
       if (moving) jevFacing = facingFor(sx, sy, jevFacing);
-      else jevFacing = leg?.kind === 'drop' ? leg.destination === 'trash' ? 'right' : 'up' : leg?.kind === 'wait' ? 'left' : 'down';
+      else jevFacing = leg?.kind === 'drop' ? leg.destination === 'trash' ? 'right' : 'up' : leg?.kind === 'wait' ? 'left' : leg?.facing ?? 'down';
 
       // Everyone in the room, drawn back to front.
       const people: { y: number; draw: () => void }[] = [{ y, draw: () => {
@@ -323,7 +333,7 @@ export default function RoomCanvas(props: Props) {
       }
 
       // Exposes positions for end-to-end checks; updated only when they change.
-      const report = { jevX: String(x), playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size), names: names.join(',') };
+      const report = { jevX: String(x), jevY: String(y), jevLine: leg?.kind === 'chat' ? leg.say ?? '' : '', playerX: String(Math.round(me.x)), playerY: String(Math.round(me.y)), visitors: String(others.size), names: names.join(',') };
       for (const [key, value] of Object.entries(report)) if (el.dataset[key] !== value) el.dataset[key] = value;
       raf = window.requestAnimationFrame(draw);
     };
@@ -334,5 +344,5 @@ export default function RoomCanvas(props: Props) {
       el.removeEventListener('pointerdown', pointerdown); el.removeEventListener('pointermove', pointermove);
     };
   }, []);
-  return <canvas ref={canvas} className="room-canvas" role="img" aria-label="A pixel-art mailroom you can walk around. Jev sorts notes into seven bins along the wall: Compliments, Feedback, Important, Big Ideas, Dad Jokes, Art, and Spam. Walk to a bin to read its notes, or to the incoming desk to write one. Use the arrow keys to walk and Space to use things, or the Menu button for the same options." />;
+  return <canvas ref={canvas} className="room-canvas" role="img" aria-label="A pixel-art mailroom you can walk around. Jev sorts notes into seven bins along the wall: Compliments, Feedback, Important, Big Ideas, Dad Jokes, Art, and Spam. Walk to a bin to read its notes, or to the incoming desk to write one. Walk up to Jev to say hi. Use the arrow keys to walk and Space to use things, or the Menu button for the same options." />;
 }

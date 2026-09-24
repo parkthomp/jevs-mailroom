@@ -203,3 +203,34 @@ test('returning visitors refresh receipts that still refer to an old bin', async
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('jevs-mailroom-receipts-v1')!)[0].progress.category)).toBe('important');
   expect(errors).toEqual([]);
 });
+
+test('walking up to Jev and saying hi stops him for a chat everyone can see', async ({ browser }) => {
+  const talker = await (await browser.newContext()).newPage(), observer = await (await browser.newContext()).newPage();
+  const errors: string[] = [];
+  talker.on('pageerror', error => errors.push(error.message));
+  await Promise.all([talker.goto('/'), observer.goto('/')]);
+  await enter(talker, 'Chatty');
+  await enter(observer, 'Watcher');
+  const canvas = talker.locator('canvas'), prompt = talker.getByRole('button', { name: /Talk to Jev/ });
+  // Chase Jev around the room until he's close enough to talk to.
+  for (let i = 0; i < 100 && !await prompt.isVisible(); i++) {
+    const at = await canvas.evaluate(el => Object.fromEntries(Object.entries((el as HTMLCanvasElement).dataset).map(([k, v]) => [k, Number(v)])));
+    const dx = at.jevX - at.playerX, dy = at.jevY - at.playerY;
+    const key = Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'ArrowRight' : 'ArrowLeft' : dy > 0 ? 'ArrowDown' : 'ArrowUp';
+    await talker.keyboard.down(key); await talker.waitForTimeout(120); await talker.keyboard.up(key);
+  }
+  await expect(prompt).toBeVisible();
+  await talker.keyboard.press('Space');
+  const lines = ['ONLY A SITH DEALS IN ABSOLUTES', 'I HEAR PARKER IS A GREAT TEAM MEMBER', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP', 'HELLO THERE', 'RENDER IS MY HOME', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL'];
+  await expect.poll(() => canvas.getAttribute('data-jev-line')).toMatch(new RegExp(`^(${lines.join('|')})$`));
+  const line = await canvas.getAttribute('data-jev-line');
+  await expect.poll(() => observer.locator('canvas').getAttribute('data-jev-line')).toBe(line);
+  await expect(prompt).toBeHidden();
+  await talker.screenshot({ path: '.context/jev-chat.png' });
+  // He holds still while he talks, then wanders on after five seconds.
+  const x = await canvas.getAttribute('data-jev-x');
+  await talker.waitForTimeout(3000);
+  expect(await canvas.getAttribute('data-jev-x')).toBe(x);
+  await expect.poll(() => canvas.getAttribute('data-jev-line'), { timeout: 4000 }).toBe('');
+  expect(errors).toEqual([]);
+});

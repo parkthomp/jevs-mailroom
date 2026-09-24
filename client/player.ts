@@ -1,11 +1,11 @@
 import { CATEGORIES, type Category, type Facing, type Point } from '../shared/protocol';
-import { BIN_WIDTH, BIN_X, walkable } from '../shared/walk';
+import { BIN_WIDTH, BIN_X, TALK_RANGE, walkable } from '../shared/walk';
 
 // Your character walks a little slower than Jev strolls when he's in a hurry, and faster than his amble.
 export const SPEED = 72; // Room pixels per second.
 
-// The things in the room you can walk up to and use.
-export type Spot = { kind: 'bin'; category: Category } | { kind: 'incoming' } | { kind: 'trash' };
+// The things in the room you can walk up to and use, and Jev himself, who wanders about.
+export type Spot = { kind: 'bin'; category: Category } | { kind: 'incoming' } | { kind: 'trash' } | { kind: 'jev' };
 interface Box { left: number; right: number; top: number; bottom: number }
 interface Place {
   spot: Spot;
@@ -33,6 +33,9 @@ export function clicked(point: Point): Place | null {
   return PLACES.find(place => inside(point, place.hit)) ?? null;
 }
 export const canUse = (feet: Point, place: Place) => inside(feet, place.zone);
+// Standing close enough to Jev to talk to him, and clicking on him, in room pixels.
+export const nearJev = (feet: Point, jev: Point) => Math.hypot(feet[0] - jev[0], feet[1] - jev[1]) <= TALK_RANGE;
+export const onJev = ([x, y]: Point, jev: Point) => Math.abs(x - jev[0]) <= 7 && y >= jev[1] - 18 && y <= jev[1] + 2;
 
 // Held arrow keys move you, sliding along furniture rather than stopping dead against it.
 export function step(from: Point, dx: number, dy: number, distance: number): Point {

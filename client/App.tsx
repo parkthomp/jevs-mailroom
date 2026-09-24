@@ -14,7 +14,7 @@ const STORAGE_KEY = 'jevs-mailroom-receipts-v1', LOOK_KEY = 'jevs-mailroom-look-
 const terminal = new Set(['delivered', 'discarded']);
 const isCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
 const countLabel = (n: number) => `${n} ${n === 1 ? 'message' : 'messages'}`;
-const PROMPTS: Record<Spot['kind'], string> = { bin: 'Read', incoming: 'Write a note', trash: 'Look in the trash' };
+const PROMPTS: Record<Spot['kind'], string> = { bin: 'Read', incoming: 'Write a note', trash: 'Look in the trash', jev: 'Talk to Jev' };
 const promptFor = (spot: Spot) => spot.kind === 'bin' ? `Read ${BIN_META[spot.category].label}` : PROMPTS[spot.kind];
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -114,8 +114,11 @@ function useRoom() {
     const interval = setInterval(refresh, 10000);
     return () => { stopped = true; clearInterval(interval); clearTimeout(reconnect); socket.current?.close(); };
   }, []);
-  const move = useCallback((next: Omit<ClientEvent, 'type'>) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'move', ...next })); }, []);
-  return { room, error, selfId, visitors, move };
+  const emit = useCallback((event: ClientEvent) => { if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(event)); }, []);
+  const move = useCallback((next: Omit<Extract<ClientEvent, { type: 'move' }>, 'type'>) => emit({ type: 'move', ...next }), [emit]);
+  // Jev hears you out, if you're standing beside him, and everyone sees what he says back.
+  const chat = useCallback(() => emit({ type: 'talk' }), [emit]);
+  return { room, error, selfId, visitors, move, chat };
 }
 
 // Keeps keyboard focus inside a window, closes it on Escape, and hands focus back afterwards.
@@ -324,7 +327,7 @@ function TouchPad({ pad, onUse }: { pad: RefObject<Pad>; onUse: () => void }) {
 }
 
 export default function App() {
-  const { room, error: roomError, selfId, visitors, move } = useRoom();
+  const { room, error: roomError, selfId, visitors, move, chat } = useRoom();
   const [receipts, setReceipts] = useState<SavedReceipt[]>(readReceipts);
   const [selection, setSelection] = useState(() => { const params = new URLSearchParams(location.search); const value = params.get('bin'); return { category: isCategory(value) ? value : null, message: params.get('message') }; });
   const [overlay, setOverlay] = useState<'menu' | 'compose' | 'name' | null>(null);
@@ -415,8 +418,9 @@ export default function App() {
     if (!spot) { setTalk(null); return; }
     if (spot.kind === 'bin') openBin(spot.category);
     else if (spot.kind === 'incoming') compose();
+    else if (spot.kind === 'jev') { chat(); setTalk(null); }
     else setTalk({ speaker: null, line: 'The trash can. Notes that break the mailroom rules end up in here, and Jev never shows anyone what they said.', ends: 'leave' });
-  }, [openBin, compose]);
+  }, [openBin, compose, chat]);
   const walked = useCallback(() => setTalk(current => current?.ends === 'walk' ? null : current), []);
   const nearby = useCallback((spot: Spot | null) => { setNear(spot); setTalk(current => current?.ends === 'leave' ? null : current); }, []);
   const naming = (!name || overlay === 'name') && !selection.category;

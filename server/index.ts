@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { CATEGORIES, type Category } from '../shared/protocol.js';
 import { aiMode } from './ai.js';
 import { startEngine } from './engine.js';
+import { chatWithJev } from './jev.js';
 import { approveName, asPublic, binPage, HttpError, progress, snapshot, submit, validPass } from './room.js';
 import { Store } from './store.js';
 import { Presence } from './visitors.js';
@@ -113,7 +114,13 @@ wss.on('connection', socket => {
   void currentRoom().then(room => send(socket, JSON.stringify({ type: 'snapshot', room }))).catch(() => socket.close(1013, 'Room unavailable'));
   send(socket, JSON.stringify({ type: 'hello', id: presence.join(socket) }));
   send(socket, JSON.stringify({ type: 'visitors', visitors: presence.list() }));
-  socket.on('message', data => { try { presence.move(socket, JSON.parse(String(data))); } catch { /* Ignore anything that isn't a move. */ } });
+  socket.on('message', data => {
+    let event: unknown;
+    try { event = JSON.parse(String(data)); } catch { return; /* Ignore anything that isn't JSON. */ }
+    if ((event as { type?: unknown })?.type !== 'talk') { presence.move(socket, event); return; }
+    const at = presence.talk(socket);
+    if (at) void store.mutate(state => chatWithJev(state, at, Date.now())).catch(() => { /* Jev just doesn't answer this time. */ });
+  });
   socket.on('close', () => presence.leave(socket));
   socket.on('error', () => {});
   alive.add(socket);
