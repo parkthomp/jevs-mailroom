@@ -22,7 +22,7 @@ function jev(category: string, reaction: string, hazards: Partial<Record<typeof 
   return { model: 'typesafe/jev-1.13-20260917', usage: { input_tokens: 1, output_tokens: 1 }, answers: {
     ...Object.fromEntries(HAZARDS.map(hazard => [hazard, { type: 'noul', noul: hazards[hazard] ?? 0.02 }])),
     category: choice(category),
-    ...Object.fromEntries(['compliments', 'ideas', 'complaints', 'misc'].map(bin => [`reaction_${bin}`, choice(bin === category ? reaction : REACTIONS[bin as Category][0])])),
+    ...Object.fromEntries(['bugs', 'ideas', 'feedback', 'misc'].map(bin => [`reaction_${bin}`, choice(bin === category ? reaction : REACTIONS[bin as Category][0])])),
   } };
 }
 function live(responses: unknown[]) {
@@ -42,9 +42,9 @@ function live(responses: unknown[]) {
 
 test('local demo is deterministic and offers an explicit safe trash fixture', async () => {
   assert.equal(aiMode(), 'demo');
-  assert.equal((await decideMessage('I love the mailroom')).destination, 'compliments');
+  assert.equal((await decideMessage('I love the mailroom')).destination, 'feedback');
   assert.equal((await decideMessage('Please add dark mode')).destination, 'ideas');
-  assert.equal((await decideMessage('This is broken')).destination, 'complaints');
+  assert.equal((await decideMessage('This is broken')).destination, 'bugs');
   assert.equal((await decideMessage('What time is it?')).destination, 'misc');
   assert.equal((await decideMessage('[trash] test envelope')).destination, 'trash');
 });
@@ -59,16 +59,16 @@ test('partial live configuration fails clearly', () => {
   assert.throws(aiMode, /OPENROUTER_MODEL/);
 });
 test('negative feedback is published with one System One call and a pre-written reaction', async () => {
-  const requests = live([jev('complaints', 'Thanks for telling me straight.')]);
-  assert.deepEqual(await decideMessage('The page is painfully slow.'), { destination: 'complaints', reaction: 'Thanks for telling me straight.' });
+  const requests = live([jev('feedback', 'Thanks for telling me straight.')]);
+  assert.deepEqual(await decideMessage('The page is painfully slow.'), { destination: 'feedback', reaction: 'Thanks for telling me straight.' });
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, 'https://openrouter.ai/api/v1/systemone');
   assert.equal(requests[0].body.model, 'typesafe/jev-1.13');
   // The message travels only as state, never inside a question.
   assert.deepEqual(requests[0].body.state, { message: 'The page is painfully slow.' });
   assert.doesNotMatch(JSON.stringify(requests[0].body.questions), /painfully/);
-  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), ['compliments', 'ideas', 'complaints', 'misc']);
-  assert.deepEqual(Object.keys(requests[0].body.questions.reaction_complaints.criteria), REACTIONS.complaints);
+  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), ['bugs', 'ideas', 'feedback', 'misc']);
+  assert.deepEqual(Object.keys(requests[0].body.questions.reaction_feedback.criteria), REACTIONS.feedback);
 });
 test('a likely hazard discards privately with the strongest reason', async () => {
   live([jev('misc', REACTIONS.misc[0], { spam: 0.75, private_info: 0.93 })]);

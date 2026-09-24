@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -46,7 +46,7 @@ test('bin pagination handles matching timestamps and newly delivered messages wi
   assert.equal(ids.length, 47);
   assert.equal(new Set(ids).size, 47);
   assert.equal(third.nextCursor, null);
-  assert.equal(binPage(state, 'complaints').total, 0);
+  assert.equal(binPage(state, 'feedback').total, 0);
   assert.throws(() => binPage(state, 'ideas', 'broken'), /Invalid page cursor/);
 });
 
@@ -75,6 +75,39 @@ test('concurrent submissions are durable and idempotent, and receipts authorize 
     assert.equal(recovered.messages[0].text, 'Please add a garden.');
     assert.equal(progress(recovered, receipt.id, receipt.token).id, receipt.id);
     assert.equal((await submit(store, 'Please add a garden.', 'same-submission', 'ADA')).id, receipt.id);
+  } finally {
+    await store.close();
+    if (oldFile === undefined) delete process.env.DATA_FILE; else process.env.DATA_FILE = oldFile;
+    if (oldDatabase === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = oldDatabase;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('stored legacy categories migrate to the current bin schema', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'jev-category-migration-test-'));
+  const oldFile = process.env.DATA_FILE;
+  const oldDatabase = process.env.DATABASE_URL;
+  const path = join(directory, 'state.json');
+  process.env.DATA_FILE = path;
+  delete process.env.DATABASE_URL;
+  await writeFile(path, JSON.stringify({
+    version: 8,
+    messages: [
+      { ...message('praise'), decision: { destination: 'compliments', reaction: 'Thanks!' } },
+      { ...message('criticism'), decision: { destination: 'complaints', reaction: 'Noted!' } },
+    ],
+    active: { id: 'criticism', destination: 'complaints', reaction: 'Noted!', endsAt: 10 },
+    jev: [{ kind: 'drop', path: [[190, 56]], from: 0, to: 10, destination: 'complaints', carrying: 'criticism' }],
+    budget: { date: '', calls: 0 },
+  }));
+  const store = new Store();
+  try {
+    await store.init();
+    const state = await store.read();
+    assert.deepEqual(state.messages.map(item => item.decision?.destination), ['feedback', 'feedback']);
+    assert.equal(state.active?.destination, 'feedback');
+    assert.equal(state.jev?.[0].destination, 'feedback');
+    assert.equal(state.version, 9);
   } finally {
     await store.close();
     if (oldFile === undefined) delete process.env.DATA_FILE; else process.env.DATA_FILE = oldFile;

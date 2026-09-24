@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { BIN_META, CATEGORIES, cleanName, LOOKS, NAME_MAX, type BinPage, type Category, type ClientEvent, type Facing, type NamePass, type PublicMessage, type RoomSnapshot, type ServerEvent, type SubmissionProgress, type SubmissionReceipt, type Visitor } from '../shared/protocol';
-import { ARROW, BIN_ICONS, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP, visitorSprite } from './pixels';
+import { ARROW, CHECK, CLOSE, DOWN, ENVELOPE, EXCLAIM, JEV_FACE, PERSON, Sprite, TRASH_ICON, UP, visitorSprite } from './pixels';
 import type { Spot } from './player';
 import RoomCanvas, { type Move, type Pad } from './RoomCanvas';
 
@@ -202,7 +202,7 @@ function HistoryPanel({ category, highlight, room, onSelect, onClose, onCompose 
   return <div className="panel-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="history-panel" ref={panel} role="dialog" aria-modal="true" aria-labelledby="bin-title">
       <div className="panel-top"><span className="eyebrow">THE MESSAGE ARCHIVE</span><button className="icon-button" ref={closeButton} onClick={onClose} aria-label="Close message archive"><Sprite data={CLOSE} size={2} /></button></div>
-      <div className="panel-heading"><span className="big-bin"><Sprite data={BIN_ICONS[category]} size={6} /></span><div><h2 id="bin-title">{meta.label}</h2><p>{meta.description}</p></div></div>
+      <div className="panel-heading"><div><h2 id="bin-title">{meta.label}</h2><p>{meta.description}</p></div></div>
       <nav className="category-tabs" aria-label="Choose a bin">{CATEGORIES.map(key => <button key={key} onClick={() => onSelect(key)} aria-pressed={category === key} className={category === key ? 'selected' : ''}>{BIN_META[key].label}</button>)}</nav>
       <div className="archive-summary"><span>{countLabel(total)} · newest first</span></div>
       {newMessages && <button className="new-messages" onClick={() => { scroll.current?.scrollTo({ top: 0, behavior: 'smooth' }); void refresh().catch(error => setError(error.message)); }}>New messages have arrived <Sprite data={UP} size={2} /></button>}
@@ -261,7 +261,7 @@ function MenuPanel({ room, touch, name, onClose, onCompose, onBin, onRename }: {
       <div className="panel-top"><h2 id="menu-title" className="eyebrow">MENU</h2><button className="icon-button" ref={closeButton} onClick={onClose} aria-label="Close menu"><Sprite data={CLOSE} size={2} /></button></div>
       <button className="menu-item menu-write" onClick={onCompose}><Sprite data={ARROW} size={2} className="menu-cursor" /><EnvelopeIcon /> Write a note</button>
       <div className="menu-list" role="group" aria-label="Bins">{CATEGORIES.map(category => <button key={category} className="menu-item" onClick={() => onBin(category)} aria-label={`Browse ${BIN_META[category].label}, ${countLabel(room?.counts[category] || 0)}`}>
-        <Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={BIN_ICONS[category]} size={3} /><span>{BIN_META[category].label}</span><span className="menu-count">{room?.counts[category] || 0}</span>
+        <Sprite data={ARROW} size={2} className="menu-cursor" /><span>{BIN_META[category].label}</span><span className="menu-count">{room?.counts[category] || 0}</span>
       </button>)}</div>
       <button className="menu-item" onClick={onRename}><Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={PERSON} size={3} /><span>Change name</span><span className="menu-count">{name}</span></button>
       <p className="menu-help">{touch ? 'Walk with the pad, or tap anywhere to walk there. Press A next to a bin to read it, or at the INCOMING desk to write a note.' : 'Walk with the arrow keys or WASD, or click anywhere to walk there. Press Space next to a bin to read it, or at the INCOMING desk to write a note.'}</p>

@@ -42,15 +42,15 @@ test('a sorted note is sprinted straight from the tray to its bin and filed as i
   const message = note('a', 1000);
   state.messages.push(message);
   planJev(state, 1000);
-  sort(message, 'complaints');
+  sort(message, 'feedback');
   planJev(state, 1200); // Still running over: he sets off the moment he reaches the tray.
   const legs = state.jev!;
   assertContinuous(legs);
   const carry = legs.find(leg => leg.carrying === 'a' && leg.kind === 'run')!;
   assert.deepEqual(carry.path[0], TRAY);
-  assert.deepEqual(carry.path.at(-1), dropPoint('complaints'));
+  assert.deepEqual(carry.path.at(-1), dropPoint('feedback'));
   assert.ok(!visits(carry, DESK), 'no detour past the desk');
-  assert.equal(carry.say, 'FILING THIS COMPLAINT!');
+  assert.equal(carry.say, 'FILING THIS FEEDBACK!');
   assert.ok(carry.to! - carry.from < 1500, 'the sprint to the bin should be quick');
   const drop = legs.at(-1)!;
   assert.equal(drop.kind, 'drop', 'no pause after the drop');
@@ -63,7 +63,7 @@ test('a sorted note is sprinted straight from the tray to its bin and filed as i
   assert.equal(state.active, null);
   const stroll = state.jev!.find(leg => leg.from === drop.to)!;
   assert.equal(stroll.kind, 'walk', 'straight off for a stroll');
-  assert.deepEqual(stroll.path[0], dropPoint('complaints'));
+  assert.deepEqual(stroll.path[0], dropPoint('feedback'));
   assertContinuous(state.jev!);
 });
 

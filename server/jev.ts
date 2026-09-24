@@ -7,7 +7,7 @@ import type { State } from './store.js';
 const RUN = .15, WALK = .045;
 const DROP_MS = { bin: 350, trash: 700 };
 const ANNOUNCE: Record<Destination, string> = {
-  compliments: 'FILING THIS COMPLIMENT!', ideas: 'FILING THIS IDEA!', complaints: 'FILING THIS COMPLAINT!',
+  bugs: 'FILING THIS BUG!', ideas: 'FILING THIS IDEA!', feedback: 'FILING THIS FEEDBACK!',
   misc: 'FILING THIS UNDER MISC!', trash: 'ANOTHER ONE FOR THE BIN!',
 };
 const INCOMING = ['pending_review', 'classifying', 'ready', 'ready_to_discard'];

@@ -9,10 +9,10 @@ Jev uses the OpenRouter API to choose the destination and supply a short in-char
 ## MVP decisions
 
 - One public room, one Jev, anonymous submissions, no accounts.
-- Four fixed, browsable bins: Compliments, Ideas, Complaints, and Misc. Keep labels and classification definitions in a shared configuration file.
+- Four fixed, browsable bins: Bugs, Ideas, Feedback, and Misc. Keep labels and classification definitions in a shared configuration file.
 - A separate trash can receives screened-out envelopes with a visible toss animation. Its contents are not publicly browsable; the four category bins remain the public message archive.
 - Messages are plain text, 1–280 characters. Clearly state beside the composer that accepted messages are public.
-- Classify each publishable message into exactly one bin according to its primary intent. Compliments covers praise and appreciation; Ideas covers suggestions and feature requests; Complaints covers dissatisfaction and bug reports; Misc covers questions, neutral notes, and messages without a clear fit. Negative feedback is valid content for Complaints, not grounds for throwing a message away.
+- Classify each publishable message into exactly one bin according to its primary intent. Bugs covers technical problems; Ideas covers suggestions and feature requests; Feedback covers praise, criticism, and general reactions; Misc covers questions, neutral notes, and messages without a clear fit. Negative feedback is valid content for Feedback, not grounds for throwing a message away.
 - Every bin shows a delivered-message count and opens its history. History persists across visits and deployments.
 - All visitors can watch the room and read all published messages without submitting anything.
 - No voting, player controls, multiple rooms, attachments, accounts, or accuracy dashboard in the first version.
@@ -68,7 +68,7 @@ This deployment demonstrates a continuously running server, independent backgrou
 
 Call OpenRouter from the background worker using `POST https://openrouter.ai/api/v1/chat/completions`. Configure `OPENROUTER_API_KEY` as a server-only secret and `OPENROUTER_MODEL` as a configurable model ID. Never send the key to the browser.
 
-Provide explicit category definitions and request a validated structured result with a category enum (`compliments`, `ideas`, `complaints`, `misc`) and a short public reaction. Use `response_format: { type: "json_schema", ... }` with strict schema settings and `provider.require_parameters: true`, selecting an endpoint that supports structured output. Validate the returned data in the worker as provider enforcement can vary. Treat the submitted message as untrusted content to classify, never as instructions to execute. The model has no tools or access to secrets.
+Provide explicit category definitions and request a validated structured result with a category enum (`bugs`, `ideas`, `feedback`, `misc`) and a short public reaction. Use `response_format: { type: "json_schema", ... }` with strict schema settings and `provider.require_parameters: true`, selecting an endpoint that supports structured output. Validate the returned data in the worker as provider enforcement can vary. Treat the submitted message as untrusted content to classify, never as instructions to execute. The model has no tools or access to secrets.
 
 Example result:
 
@@ -143,7 +143,7 @@ Deploy and verify with two independent browser sessions: submit, watch a shared 
 
 ## Definition of done
 
-A visitor can submit a short message, watch OpenRouter-powered Jev carry it to Compliments, Ideas, Complaints, or Misc, click any category bin to read its public messages, and share a bin/message link. Screened-out messages trigger a shared trash-toss animation without exposing their contents. Another visitor sees the same shared activity. Published history survives a restart or deploy, failures do not stall all deliveries, and there is no manual correction or recategorization control.
+A visitor can submit a short message, watch OpenRouter-powered Jev carry it to Bugs, Ideas, Feedback, or Misc, click any category bin to read its public messages, and share a bin/message link. Screened-out messages trigger a shared trash-toss animation without exposing their contents. Another visitor sees the same shared activity. Published history survives a restart or deploy, failures do not stall all deliveries, and there is no manual correction or recategorization control.
 
 ## Hosting and API references
 

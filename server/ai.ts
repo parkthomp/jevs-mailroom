@@ -4,9 +4,9 @@ import { CATEGORIES, type Category, type JevDecision } from '../shared/protocol.
 // Jev is a System One decision model: it picks from options we define and never writes text,
 // so every public reaction comes from this hand-written, pre-approved list.
 export const REACTIONS: Record<Category, readonly string[]> = {
-  compliments: ['A little kindness, safely filed.', 'This one made my whole shift!', 'Filing this under warm fuzzies.', 'Aw, shucks. Straight to the top of the pile.'],
+  bugs: ['Bug report received.', 'I’ll file this with the bugs.', 'Something’s not working. Noted.', 'Thanks for spotting this one.'],
   ideas: ['A fresh idea for the collection!', 'Ooh, a spark! Into the ideas bin it goes.', 'Noted for the next big brainstorm.', 'Small idea, big possibilities.'],
-  complaints: ['Heard you. This belongs with the complaints.', 'Sorry for the bump in the road. Filed with care.', 'Thanks for telling me straight.', 'Rough edges get smoother once they’re written down.'],
+  feedback: ['Thanks for the feedback.', 'Heard you. Filed with care.', 'A little kindness, safely filed.', 'Thanks for telling me straight.'],
   misc: ['A little of everything has a home here.', 'Not sure what it is, but it’s safe with me.', 'Curious! This one goes in misc.', 'Every note deserves a place.'],
 };
 const TRASH_REACTION = 'This one goes in the trash.';
@@ -62,9 +62,9 @@ const NAME_REASONS: Record<NameHazard, string> = {
 // A hazard at or above this probability sends the envelope to the trash (or turns the name away).
 const REJECT_AT = 0.7;
 const CATEGORY_CRITERIA: Record<Category, string> = {
-  compliments: 'Praise or appreciation.',
+  bugs: 'Bug reports, errors, crashes, broken behavior, or technical problems.',
   ideas: 'Suggestions, wishes, or feature requests.',
-  complaints: 'Dissatisfaction, criticism, or bug reports.',
+  feedback: 'Praise, criticism, opinions, or general feedback that is not a bug report or feature idea.',
   misc: 'Questions, neutral notes, or anything else.',
 };
 
@@ -129,9 +129,9 @@ function demoDecision(text: string): JevDecision {
   // This is an explicitly labeled local animation fixture, not production moderation.
   if (/\[trash\]/i.test(text)) return { destination: 'trash', reaction: TRASH_REACTION, reason: 'Demo trash trigger: messages containing [trash] test the discard animation.' };
   let category: Category = 'misc';
-  if (/\b(bug|broken|crash|hate|annoy|complaint|terrible|slow|doesn.t work)\b/i.test(text)) category = 'complaints';
+  if (/\b(bug|broken|crash|error|glitch|doesn.t work|not working)\b/i.test(text)) category = 'bugs';
   else if (/\b(idea|suggest|could|should|please add|feature|wish|what if)\b/i.test(text)) category = 'ideas';
-  else if (/\b(love|great|thank|thanks|beautiful|nice|awesome|amazing|cute|well done)\b/i.test(text)) category = 'compliments';
+  else if (/\b(love|great|thank|thanks|beautiful|nice|awesome|amazing|cute|well done|hate|annoy|complaint|terrible|slow)\b/i.test(text)) category = 'feedback';
   return { destination: category, reaction: REACTIONS[category][0] };
 }
 

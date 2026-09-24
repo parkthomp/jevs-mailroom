@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import pg from 'pg';
-import type { ActiveDelivery, JevDecision, JevLeg, SubmissionStatus } from '../shared/protocol.js';
+import type { ActiveDelivery, Destination, JevDecision, JevLeg, SubmissionStatus } from '../shared/protocol.js';
 
 export interface StoredMessage {
   id: string; text: string; submissionId: string; tokenHash: string;
@@ -16,6 +16,28 @@ export interface State {
   budget: { date: string; calls: number };
 }
 const empty = (): State => ({ version: 1, messages: [], active: null, jev: [], budget: { date: '', calls: 0 } });
+// Versions before the Bugs/Feedback rename stored the old public category keys. Convert them as
+// storage opens so snapshots, receipts, active deliveries, and Jev's route all use the new schema.
+const legacyDestination = (value: unknown): Destination | undefined =>
+  value === 'compliments' || value === 'complaints' ? 'feedback' : undefined;
+function migrateLegacyCategories(state: State): boolean {
+  let changed = false;
+  for (const message of state.messages) {
+    if (!message.decision) continue;
+    const destination = legacyDestination((message.decision as { destination: unknown }).destination);
+    if (destination) { message.decision = { ...message.decision, destination }; changed = true; }
+  }
+  if (state.active) {
+    const destination = legacyDestination((state.active as { destination: unknown }).destination);
+    if (destination) { state.active = { ...state.active, destination }; changed = true; }
+  }
+  state.jev = (state.jev ?? []).map(leg => {
+    const destination = legacyDestination((leg as { destination?: unknown }).destination);
+    if (!destination) return leg;
+    changed = true; return { ...leg, destination };
+  });
+  return changed;
+}
 export class Store {
   readonly pool: pg.Pool | undefined;
   private state = empty();
@@ -32,7 +54,7 @@ export class Store {
       // A freshly created service's private network, or a database that is still starting, can
       // briefly refuse connections. Wait it out instead of crash-looping and failing the deploy.
       for (let attempt = 1; ; attempt++) {
-        try { await this.createSchema(this.pool); return; }
+        try { await this.createSchema(this.pool); break; }
         catch (error) {
           if (attempt >= 10) throw error;
           const code = (error as NodeJS.ErrnoException).code || 'error';
@@ -40,9 +62,12 @@ export class Store {
           await new Promise(resolve => setTimeout(resolve, attempt * 2000));
         }
       }
+      await this.mutate(state => { if (migrateLegacyCategories(state)) state.version++; });
+      return;
     }
     try { this.state = JSON.parse(await readFile(this.path, 'utf8')) as State; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    await this.mutate(state => { if (migrateLegacyCategories(state)) state.version++; });
   }
   private async createSchema(pool: pg.Pool) {
     const client = await pool.connect();

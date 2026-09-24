@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { BIN_META, CATEGORIES, type Category, type Facing, type Point, type RoomSnapshot, type Visitor } from '../shared/protocol';
 import { BIN_X, DOOR, jevAt, ROOM_H as H, ROOM_W as W, route } from '../shared/walk';
-import { BIN_ICONS, ENVELOPE, ENVELOPE_OWN, FONT, jevSprite, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
+import { ENVELOPE, ENVELOPE_OWN, FONT, jevSprite, PALETTE, PLANT, visitorSprite, type SpriteData } from './pixels';
 import { canUse, clicked, facingFor, nearby, sameSpot, SPEED, step, toward, type Spot } from './player';
 
 const [INK, DARK, LIGHT, PAPER] = PALETTE;
@@ -138,7 +138,6 @@ export default function RoomCanvas(props: Props) {
       // Wall, baseboard, and a tiled floor inside a dark frame, with a doorway in the bottom wall.
       rect(0, 0, W, H, PAPER);
       rect(0, 0, W, 38, LIGHT);
-      for (let x = 4; x < W; x += 8) for (let y = 4; y < 36; y += 8) rect(x, y, 1, 1, PAPER);
       rect(0, 38, W, 2, DARK); rect(0, 40, W, 1, INK);
       for (let x = 8; x < W; x += 16) for (let y = 48; y < H - 4; y += 16) rect(x, y, 1, 1, LIGHT);
       rect(0, 0, W, 2, INK); rect(0, 0, 2, H, INK); rect(W - 2, 0, 2, H, INK);
@@ -146,20 +145,18 @@ export default function RoomCanvas(props: Props) {
       rect(DOOR[0] - 14, H - 4, 2, 4, INK); rect(DOOR[0] + 12, H - 4, 2, 4, INK);
       rect(DOOR[0] - 11, H - 9, 22, 7, DARK);
       for (let x = DOOR[0] - 9; x < DOOR[0] + 10; x += 3) rect(x, H - 8, 1, 5, LIGHT);
-      // Sign, window, and clock.
-      rect(128, 3, 64, 11, INK); rect(129, 4, 62, 9, PAPER); print('JEV\'S MAILROOM', 160, 6);
+      // Window and clock.
       rect(12, 8, 34, 25, INK); rect(14, 10, 30, 21, PAPER); rect(28, 10, 2, 21, DARK); rect(14, 19, 30, 2, DARK);
       rect(17, 13, 6, 2, LIGHT); rect(33, 24, 7, 2, LIGHT); rect(10, 32, 38, 3, DARK); rect(10, 35, 38, 1, INK);
       clock(303, 18);
-      // Four bins along the wall; the icons tell them apart without colour.
+      // Four bins along the wall, with each name painted on its front.
       for (const key of CATEGORIES) {
         const x = BIN_X[key] - 19, count = data?.counts[key] || 0;
-        label(BIN_META[key].label.toUpperCase(), BIN_X[key], 15, lit({ kind: 'bin', category: key }));
         rect(x, 24, 38, 20, INK); rect(x + 2, 26, 34, 5, DARK);
         if (count) sprite(ENVELOPE, x + 7, 22);
         if (count > 1) sprite(ENVELOPE, x + 21, 21);
         rect(x + 2, 31, 34, 11, LIGHT); rect(x + 2, 31, 34, 1, PAPER);
-        sprite(BIN_ICONS[key], BIN_X[key] - 4, 33);
+        label(BIN_META[key].label.toUpperCase(), BIN_X[key], 34, lit({ kind: 'bin', category: key }));
         rect(x + 2, 44, 34, 2, LIGHT);
       }
       // Rug, desk, lamp, and paperwork.
@@ -343,5 +340,5 @@ export default function RoomCanvas(props: Props) {
       el.removeEventListener('pointerdown', pointerdown); el.removeEventListener('pointermove', pointermove);
     };
   }, []);
-  return <canvas ref={canvas} className="room-canvas" role="img" aria-label="A pixel-art mailroom you can walk around. Jev sorts notes into four bins along the wall: Compliments, Ideas, Complaints, and Misc. Walk to a bin to read its notes, or to the incoming desk to write one. Use the arrow keys to walk and Space to use things, or the Menu button for the same options." />;
+  return <canvas ref={canvas} className="room-canvas" role="img" aria-label="A pixel-art mailroom you can walk around. Jev sorts notes into four bins along the wall: Bugs, Ideas, Feedback, and Misc. Walk to a bin to read its notes, or to the incoming desk to write one. Use the arrow keys to walk and Space to use things, or the Menu button for the same options." />;
 }

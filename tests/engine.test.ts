@@ -30,15 +30,15 @@ test('worker sorts valid criticism, discards privately, and recovers an unfinish
   let stop: (() => Promise<void>) | undefined;
   try {
     await store.init();
-    const complaint = await submit(store, 'The form is broken and slow.', 'complaint', 'ADA');
+    const bug = await submit(store, 'The form is broken and slow.', 'bug', 'ADA');
     const discarded = await submit(store, '[trash] PRIVATE_FIXTURE_DO_NOT_PUBLISH', 'screened', 'ADA');
     stop = await startEngine(store);
     await eventually(async () => {
       const state = await store.read();
-      return progress(state, complaint.id, complaint.token).status === 'delivered' && progress(state, discarded.id, discarded.token).status === 'discarded';
+      return progress(state, bug.id, bug.token).status === 'delivered' && progress(state, discarded.id, discarded.token).status === 'discarded';
     }, 15000);
     const room = snapshot(await store.read(), 1, 'demo');
-    assert.equal(room.counts.complaints, 1);
+    assert.equal(room.counts.bugs, 1);
     assert.equal(room.recent.length, 1);
     assert.equal(room.recent[0].name, 'ADA', 'published notes carry their sender’s name');
     assert.doesNotMatch(JSON.stringify(room), /PRIVATE_FIXTURE/);

@@ -95,7 +95,7 @@ test('mobile and reduced-motion visitors get a touch pad and can open every bin 
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.getByRole('button', { name: 'Use', exact: true })).toBeVisible();
-    for (const category of ['Compliments', 'Ideas', 'Complaints', 'Misc']) {
+    for (const category of ['Bugs', 'Ideas', 'Feedback', 'Misc']) {
       await browse(page, category);
       await expect(page.getByRole('dialog').getByRole('heading', { name: category, exact: true })).toBeVisible();
       const box = await page.getByRole('dialog').boundingBox();

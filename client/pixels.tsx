@@ -1,4 +1,4 @@
-import { LOOKS, type Category, type Facing } from '../shared/protocol';
+import { LOOKS, type Facing } from '../shared/protocol';
 
 // The classic four-shade handheld palette, darkest to lightest. CSS mirrors these as --p0..--p3.
 export const PALETTE = ['#081820', '#346856', '#88c070', '#e0f8d0'] as const;
@@ -98,13 +98,6 @@ export function visitorSprite(look: number, facing: Facing, step: boolean): Spri
 export const ENVELOPE: SpriteData = ['00000000', '00333300', '03033030', '03300330', '03333330', '00000000'];
 // The sender's own envelope is shaded so they can pick it out on the trolley.
 export const ENVELOPE_OWN: SpriteData = ENVELOPE.map(row => row.replaceAll('3', '2'));
-
-export const BIN_ICONS: Record<Category, SpriteData> = {
-  compliments: ['.00.00.', '0000000', '0000000', '0000000', '.00000.', '..000..', '...0...'],
-  ideas: ['..000..', '.03000.', '.00000.', '.00000.', '..000..', '.......', '..000..'],
-  complaints: ['.00000.', '0000000', '0030300', '0000000', '0033300', '0300030', '.00000.'],
-  misc: ['.00000.', '00...00', '....00.', '...00..', '...00..', '.......', '...00..'],
-};
 
 export const ARROW: SpriteData = ['0...', '00..', '000.', '0000', '000.', '00..', '0...'];
 export const DOWN: SpriteData = ['0000000', '.00000.', '..000..', '...0...'];
