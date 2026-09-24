@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import type { Category } from '../shared/protocol.js';
+import { CATEGORIES, type Category } from '../shared/protocol.js';
 import { aiMode, checkName, decideMessage, REACTIONS } from './ai.js';
 
 const originalFetch = globalThis.fetch;
@@ -15,14 +15,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env = { ...originalEnv };
 });
-const HAZARDS = ['abuse', 'private_info', 'explicit', 'spam', 'threats'] as const;
+const HAZARDS = ['abuse', 'private_info', 'explicit', 'threats'] as const;
 // Builds a System One response; every hazard defaults to clearly absent.
 function jev(category: string, reaction: string, hazards: Partial<Record<typeof HAZARDS[number], number>> = {}) {
   const choice = (value: string) => ({ type: 'choice', choice: value, probabilities: { [value]: 1 }, confidence: 1 });
   return { model: 'typesafe/jev-1.13-20260917', usage: { input_tokens: 1, output_tokens: 1 }, answers: {
     ...Object.fromEntries(HAZARDS.map(hazard => [hazard, { type: 'noul', noul: hazards[hazard] ?? 0.02 }])),
+    star_wars: { type: 'noul', noul: 0.02 },
     category: choice(category),
-    ...Object.fromEntries(['bugs', 'ideas', 'feedback', 'misc'].map(bin => [`reaction_${bin}`, choice(bin === category ? reaction : REACTIONS[bin as Category][0])])),
+    ...Object.fromEntries(CATEGORIES.map(bin => [`reaction_${bin}`, choice(bin === category ? reaction : REACTIONS[bin as Category][0])])),
   } };
 }
 function live(responses: unknown[]) {
@@ -42,10 +43,10 @@ function live(responses: unknown[]) {
 
 test('local demo is deterministic and offers an explicit safe trash fixture', async () => {
   assert.equal(aiMode(), 'demo');
-  assert.equal((await decideMessage('I love the mailroom')).destination, 'feedback');
-  assert.equal((await decideMessage('Please add dark mode')).destination, 'ideas');
-  assert.equal((await decideMessage('This is broken')).destination, 'bugs');
-  assert.equal((await decideMessage('What time is it?')).destination, 'misc');
+  assert.equal((await decideMessage('I love the mailroom')).destination, 'compliments');
+  assert.equal((await decideMessage('Please add dark mode')).destination, 'big_ideas');
+  assert.equal((await decideMessage('This is broken')).destination, 'feedback');
+  assert.equal((await decideMessage('What time is it?')).destination, 'feedback');
   assert.equal((await decideMessage('[trash] test envelope')).destination, 'trash');
 });
 test('production refuses to silently use demo, including explicit demo', () => {
@@ -67,29 +68,29 @@ test('negative feedback is published with one System One call and a pre-written 
   // The message travels only as state, never inside a question.
   assert.deepEqual(requests[0].body.state, { message: 'The page is painfully slow.' });
   assert.doesNotMatch(JSON.stringify(requests[0].body.questions), /painfully/);
-  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), ['bugs', 'ideas', 'feedback', 'misc']);
+  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), CATEGORIES);
   assert.deepEqual(Object.keys(requests[0].body.questions.reaction_feedback.criteria), REACTIONS.feedback);
 });
 test('a likely hazard discards privately with the strongest reason', async () => {
-  live([jev('misc', REACTIONS.misc[0], { spam: 0.75, private_info: 0.93 })]);
+  live([jev('feedback', REACTIONS.feedback[0], { abuse: 0.75, private_info: 0.93 })]);
   const result = await decideMessage('private fixture content');
   assert.deepEqual(result, { destination: 'trash', reaction: 'This one goes in the trash.', reason: 'This message appears to contain private information or credentials.' });
   assert.ok(!result.reaction.includes('private fixture content'));
 });
 test('hazards below the threshold are published', async () => {
-  live([jev('ideas', REACTIONS.ideas[1], { abuse: 0.69 })]);
-  assert.equal((await decideMessage('An idea')).destination, 'ideas');
+  live([jev('big_ideas', REACTIONS.big_ideas[1], { abuse: 0.69 })]);
+  assert.equal((await decideMessage('An idea')).destination, 'big_ideas');
 });
 test('an unknown reaction falls back to the bin’s standard line', async () => {
-  live([jev('ideas', 'unsafe fixture')]);
-  assert.deepEqual(await decideMessage('An idea'), { destination: 'ideas', reaction: 'A fresh idea for the collection!' });
+  live([jev('big_ideas', 'unsafe fixture')]);
+  assert.deepEqual(await decideMessage('An idea'), { destination: 'big_ideas', reaction: 'A fresh idea for the collection!' });
 });
 test('malformed answers and invalid categories fail closed for worker retry', async () => {
   live(['not json']);
   await assert.rejects(decideMessage('hello'), /invalid decision/);
   live([jev('trash', 'bad enum')]);
   await assert.rejects(decideMessage('hello'), /invalid decision/);
-  const missing = jev('ideas', REACTIONS.ideas[0]);
+  const missing = jev('big_ideas', REACTIONS.big_ideas[0]);
   delete (missing.answers as Record<string, unknown>).threats;
   live([missing]);
   await assert.rejects(decideMessage('hello'), /invalid decision/);
@@ -127,4 +128,31 @@ test('an obscene or attacking name is turned away with the likelier reason', asy
 test('a malformed name check fails closed', async () => {
   live([{ answers: { obscene: { type: 'noul', noul: 0.1 } } }]);
   await assert.rejects(checkName('ADA'), /invalid decision/);
+});
+
+test('Star Wars wins over other bins, but never over harmful-content screening', async () => {
+  const answer = jev('dad_jokes', REACTIONS.dad_jokes[0]);
+  answer.answers.star_wars.noul = 0.98;
+  live([answer]);
+  assert.deepEqual(await decideMessage('A Jedi dad joke'), { destination: 'important', reaction: REACTIONS.important[0] });
+  const harmful = jev('dad_jokes', REACTIONS.dad_jokes[0], { threats: 0.9 });
+  harmful.answers.star_wars.noul = 0.98;
+  live([harmful]);
+  assert.equal((await decideMessage('A harmful fixture with a Star Wars reference')).destination, 'trash');
+});
+
+test('harmless spam is public and no longer a screening hazard', async () => {
+  const requests = live([jev('spam', REACTIONS.spam[0])]);
+  assert.equal((await decideMessage('Buy now! Test test test.')).destination, 'spam');
+  assert.equal(requests[0].body.questions.spam, undefined);
+  live([jev('spam', REACTIONS.spam[0], { explicit: 0.95 })]);
+  assert.equal((await decideMessage('Explicit spam fixture')).destination, 'trash');
+});
+
+test('demo covers every new category and keeps ordinary urgency out of important', async () => {
+  for (const [text, category] of [
+    ['May the Force be with you! Great art!', 'important'],
+    ['Here is a poem', 'art'], ['A dad joke', 'dad_jokes'],
+    ['test', 'spam'], ['URGENT: important feedback', 'feedback'],
+  ]) assert.equal((await decideMessage(text)).destination, category);
 });

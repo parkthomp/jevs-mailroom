@@ -15,8 +15,10 @@ export const validPass = (name: string, pass: unknown) => {
   return expected.length === given.length && timingSafeEqual(expected, given);
 };
 export class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
+const validCategory = (value: unknown): value is Category => CATEGORIES.includes(value as Category);
+const validDestination = (value: unknown) => value === 'trash' || validCategory(value);
 export function asPublic(message: StoredMessage): PublicMessage | null {
-  if (message.status !== 'delivered' || !message.deliveredAt || !message.decision || message.decision.destination === 'trash') return null;
+  if (message.status !== 'delivered' || !message.deliveredAt || !message.decision || !validCategory(message.decision.destination)) return null;
   return { id: message.id, name: message.name ?? null, text: message.text, category: message.decision.destination, reaction: message.decision.reaction, createdAt: message.createdAt, deliveredAt: message.deliveredAt };
 }
 export function snapshot(state: State, online: number, mode: 'demo' | 'live'): RoomSnapshot {
@@ -24,8 +26,8 @@ export function snapshot(state: State, online: number, mode: 'demo' | 'live'): R
   const counts = Object.fromEntries(CATEGORIES.map(category => [category, messages.filter(message => message.category === category).length])) as Record<Category, number>;
   return { version: state.version, serverTime: Date.now(), counts, online, mode,
     queue: state.messages.filter(message => pending(message) && message.id !== state.active?.id).map(({ id }) => ({ id })),
-    active: state.active ? { ...state.active, reaction: state.active.destination === 'trash' ? TRASH_REACTION : state.active.reaction } : null,
-    jev: state.jev ?? [],
+    active: state.active && validDestination(state.active.destination) ? { ...state.active, reaction: state.active.destination === 'trash' ? TRASH_REACTION : state.active.reaction } : null,
+    jev: (state.jev ?? []).every(leg => !leg.destination || validDestination(leg.destination)) ? state.jev ?? [] : [],
     recent: messages.sort((a, b) => b.deliveredAt - a.deliveredAt).slice(0, 8) };
 }
 // Counts one call against the daily AI budget, or returns false once it's spent.
@@ -71,7 +73,7 @@ export function progress(state: State, id: string, token: string): SubmissionPro
   const message = state.messages.find(item => item.id === id);
   if (!message || !timingSafeEqual(Buffer.from(message.tokenHash, 'hex'), Buffer.from(hash(token), 'hex'))) throw new HttpError(404, 'Receipt not found.');
   const category = message.decision?.destination;
-  return { id, status: message.status, ...(category && category !== 'trash' ? { category } : {}),
+  return { id, status: message.status, ...(validCategory(category) ? { category } : {}),
     ...(message.reason ? { reason: message.reason } : {}),
     ...(pending(message) ? { queuePosition: state.messages.filter(pending).findIndex(item => item.id === id) + 1 } : {}) };
 }

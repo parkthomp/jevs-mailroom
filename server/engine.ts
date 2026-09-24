@@ -3,6 +3,7 @@ import { Redis } from 'ioredis';
 import type pg from 'pg';
 import { decideMessage, aiMode } from './ai.js';
 import { spendBudget, TRASH_REACTION } from './room.js';
+import { queueCategoryResort } from './resort.js';
 import { planJev } from './jev.js';
 import type { Store } from './store.js';
 
@@ -10,7 +11,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export async function startEngine(store: Store) {
   aiMode();
   let stopping = false;
-  let leader = !store.pool;
+  let leader = false;
   let leadership: pg.PoolClient | undefined;
   let queue: Queue | undefined;
   let worker: Worker | undefined;
@@ -19,6 +20,12 @@ export async function startEngine(store: Store) {
   const concurrency = Math.max(1, Math.min(4, Number(process.env.AI_CONCURRENCY || 2)));
   const dispatched = new Map<string, number>();
   let detachLeaderError: (() => void) | undefined;
+
+  const prepareArchive = async () => {
+    const count = await store.mutate(queueCategoryResort);
+    if (count) console.log(`Queued ${count} saved messages for Jev to re-sort.`);
+  };
+  if (!store.pool) { await prepareArchive(); leader = true; }
 
   const processMessage = async (id: string) => {
     if (!leader || stopping || inflight.size >= concurrency) return;
@@ -94,7 +101,7 @@ export async function startEngine(store: Store) {
           client.on('error', onError);
           try {
             const result = await client.query('SELECT pg_try_advisory_lock(745312904) AS acquired');
-            if (result.rows[0].acquired) { leader = true; leadership = client; detachLeaderError = () => client.removeListener('error', onError); console.log('Jev room coordinator acquired leadership.'); }
+            if (result.rows[0].acquired) { await prepareArchive(); leader = true; leadership = client; detachLeaderError = () => client.removeListener('error', onError); console.log('Jev room coordinator acquired leadership.'); }
             else { client.removeListener('error', onError); client.release(); }
           } catch (error) { client.removeListener('error', onError); client.release(true); throw error; }
         }

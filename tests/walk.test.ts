@@ -26,7 +26,7 @@ test('notes go straight from the tray to their destination', () => {
   for (const destination of destinations) {
     const path = route(TRAY, dropPoint(destination));
     assert.ok(!path.some(point => point[0] === DESK[0] && point[1] === DESK[1]));
-    assert.ok(pathLength(path) <= 230);
+    assert.equal(pathLength(path), pathLength([TRAY, dropPoint(destination)]), 'no detour even to the farthest bin');
   }
 });
 

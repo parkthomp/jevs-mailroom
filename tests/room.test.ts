@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { queueCategoryResort } from '../server/resort.js';
 import { Store, type State, type StoredMessage } from '../server/store.js';
 import { approveName, asPublic, binPage, progress, snapshot, submit, validPass } from '../server/room.js';
 
@@ -10,7 +11,7 @@ const message = (id: string, overrides: Partial<StoredMessage> = {}): StoredMess
   id, submissionId: id, tokenHash: '', text: `A thoughtful idea ${id}`,
   status: 'delivered', createdAt: 10, deliveredAt: 100,
   attempts: 1, nextAttemptAt: 0,
-  decision: { destination: 'ideas', reaction: 'An idea for the next update!' },
+  decision: { destination: 'big_ideas', reaction: 'An idea for the next update!' },
   ...overrides,
 });
 const stateWith = (messages: StoredMessage[]): State => ({
@@ -25,29 +26,29 @@ test('private submissions and discarded content never appear in public history o
   ]);
   state.active = { id: 'trash', destination: 'trash', reaction: 'PRIVATE_REACTION', endsAt: 4 };
   const room = snapshot(state, 2, 'demo');
-  assert.equal(room.counts.ideas, 1);
+  assert.equal(room.counts.big_ideas, 1);
   assert.equal(room.recent.length, 1);
   assert.deepEqual(room.queue, [{ id: 'checking' }]);
   assert.equal(room.active?.reaction, 'This one goes in the trash.');
   assert.doesNotMatch(JSON.stringify(room), /PRIVATE_/);
   assert.equal(asPublic(state.messages[2]), null);
-  assert.equal(binPage(state, 'ideas').total, 1);
+  assert.equal(binPage(state, 'big_ideas').total, 1);
 });
 
 test('bin pagination handles matching timestamps and newly delivered messages without repeats', () => {
   const state = stateWith(Array.from({ length: 47 }, (_, i) => message(String(i).padStart(3, '0'))));
-  const first = binPage(state, 'ideas');
+  const first = binPage(state, 'big_ideas');
   assert.equal(first.messages.length, 20);
   assert.ok(first.nextCursor);
   state.messages.push(message('new', { deliveredAt: 200 }));
-  const second = binPage(state, 'ideas', first.nextCursor!);
-  const third = binPage(state, 'ideas', second.nextCursor!);
+  const second = binPage(state, 'big_ideas', first.nextCursor!);
+  const third = binPage(state, 'big_ideas', second.nextCursor!);
   const ids = [...first.messages, ...second.messages, ...third.messages].map(item => item.id);
   assert.equal(ids.length, 47);
   assert.equal(new Set(ids).size, 47);
   assert.equal(third.nextCursor, null);
   assert.equal(binPage(state, 'feedback').total, 0);
-  assert.throws(() => binPage(state, 'ideas', 'broken'), /Invalid page cursor/);
+  assert.throws(() => binPage(state, 'big_ideas', 'broken'), /Invalid page cursor/);
 });
 
 test('concurrent submissions are durable and idempotent, and receipts authorize private status', async () => {
@@ -83,7 +84,7 @@ test('concurrent submissions are durable and idempotent, and receipts authorize 
   }
 });
 
-test('stored legacy categories migrate to the current bin schema', async () => {
+test('legacy storage waits for coordinator re-sort and never exposes obsolete bins', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'jev-category-migration-test-'));
   const oldFile = process.env.DATA_FILE;
   const oldDatabase = process.env.DATABASE_URL;
@@ -104,10 +105,18 @@ test('stored legacy categories migrate to the current bin schema', async () => {
   try {
     await store.init();
     const state = await store.read();
-    assert.deepEqual(state.messages.map(item => item.decision?.destination), ['feedback', 'feedback']);
-    assert.equal(state.active?.destination, 'feedback');
-    assert.equal(state.jev?.[0].destination, 'feedback');
-    assert.equal(state.version, 9);
+    assert.deepEqual(state.messages.map(item => item.decision?.destination), ['compliments', 'complaints']);
+    assert.equal(state.version, 8, 'opening storage must not alter categories under the old worker');
+    const publicRoom = snapshot(state, 0, 'live');
+    assert.equal(publicRoom.recent.length, 1);
+    assert.equal(publicRoom.active, null);
+    assert.deepEqual(publicRoom.jev, []);
+    await store.mutate(queueCategoryResort);
+    const queued = await store.read();
+    assert.ok(queued.messages.every(item => item.status === 'pending_review' && !item.decision));
+    assert.equal(queued.active, null);
+    assert.deepEqual(queued.jev, []);
+    assert.equal(queued.version, 9);
   } finally {
     await store.close();
     if (oldFile === undefined) delete process.env.DATA_FILE; else process.env.DATA_FILE = oldFile;

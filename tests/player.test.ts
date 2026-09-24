@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { clicked, nearby, step, toward } from '../client/player.js';
 import { Presence } from '../server/visitors.js';
+import { CATEGORIES } from '../shared/protocol.js';
 import { BIN_X, DOOR, walkable } from '../shared/walk.js';
 
 test('visitors stay on the floor and walk around the furniture', () => {
@@ -26,7 +27,7 @@ test('visitors stay on the floor and walk around the furniture', () => {
 });
 
 test('walking up to a bin, the incoming desk, or the trash offers to use it', () => {
-  assert.deepEqual(nearby([BIN_X.ideas, 54])?.spot, { kind: 'bin', category: 'ideas' });
+  assert.deepEqual(nearby([BIN_X.big_ideas, 54])?.spot, { kind: 'bin', category: 'big_ideas' });
   assert.deepEqual(nearby([45, 132])?.spot, { kind: 'incoming' });
   assert.deepEqual(clicked([45, 104])?.spot, { kind: 'incoming' });
   assert.equal(clicked([160, 70]), null, 'the old desk no longer has a click target');
@@ -53,4 +54,12 @@ test('presence shares well-formed moves with approved names only, at a limited r
   presence.leave(socket);
   assert.equal(presence.dirty, true);
   assert.deepEqual(presence.list(), []);
+});
+
+test('every bin has a distinct reachable approach and click target', () => {
+  for (const category of CATEGORIES) {
+    assert.ok(walkable([BIN_X[category], 54]));
+    assert.deepEqual(clicked([BIN_X[category], 34])?.spot, { kind: 'bin', category });
+    assert.deepEqual(nearby([BIN_X[category], 54])?.spot, { kind: 'bin', category });
+  }
 });

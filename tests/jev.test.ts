@@ -89,13 +89,13 @@ test('with nothing to sort, Jev mills about the room instead of standing still',
 
 test('a note already waiting gets a dash from the bin, not from the desk', () => {
   const state = room();
-  state.messages.push(note('a', 0, 'ideas'), note('b', 0, 'trash'));
+  state.messages.push(note('a', 0, 'big_ideas'), note('b', 0, 'trash'));
   planJev(state, 0);
   const done = state.active!.endsAt;
   planJev(state, done);
   assertContinuous(state.jev!);
   const dash = state.jev!.find(leg => leg.kind === 'run' && leg.from === done)!;
-  assert.deepEqual(dash.path[0], dropPoint('ideas'));
+  assert.deepEqual(dash.path[0], dropPoint('big_ideas'));
   assert.deepEqual(dash.path.at(-1), TRAY);
   assert.equal(state.active!.id, 'b');
   assert.equal(state.jev!.find(leg => leg.carrying === 'b' && leg.kind === 'run')!.say, 'ANOTHER ONE FOR THE BIN!');
@@ -103,7 +103,7 @@ test('a note already waiting gets a dash from the bin, not from the desk', () =>
 
 test('a new note interrupts a stroll, and Jev runs from wherever he is', () => {
   const state = room();
-  state.messages.push(note('a', 0, 'misc'));
+  state.messages.push(note('a', 0, 'feedback'));
   planJev(state, 0);
   const done = state.active!.endsAt;
   planJev(state, done);
@@ -115,7 +115,7 @@ test('a new note interrupts a stroll, and Jev runs from wherever he is', () => {
   assertContinuous(state.jev!);
   const dash = state.jev!.find(leg => leg.kind === 'run' && leg.from === now)!;
   assert.deepEqual(dash.path[0], midway);
-  assert.ok(!samePoint(midway, DESK) && !samePoint(midway, dropPoint('misc')));
+  assert.ok(!samePoint(midway, DESK) && !samePoint(midway, dropPoint('feedback')));
   assert.equal(state.jev!.at(-1)!.kind, 'wait');
 });
 

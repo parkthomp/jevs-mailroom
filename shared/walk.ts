@@ -3,7 +3,8 @@ import type { Category, Destination, JevLeg, Point } from './protocol.js';
 // The room's floor plan in canvas pixels (the room is 320×160). Positions are where Jev's feet land.
 // Shared so the server plans the same walks every visitor draws.
 export const ROOM_W = 320, ROOM_H = 160;
-export const BIN_X: Record<Category, number> = { bugs: 82, ideas: 136, feedback: 190, misc: 244 };
+export const BIN_X: Record<Category, number> = { compliments: 31, feedback: 78, important: 121, big_ideas: 165, dad_jokes: 208, art: 251, spam: 290 };
+export const BIN_WIDTH: Record<Category, number> = { compliments: 50, feedback: 38, important: 42, big_ideas: 40, dad_jokes: 40, art: 36, spam: 36 };
 export const DESK: Point = [45, 132], TRAY: Point = [80, 116], TRASH: Point = [262, 122];
 const CORRIDOR = 56; // The strip of floor in front of the bins.
 const AISLES = [110, 212]; // Open lanes through the room.

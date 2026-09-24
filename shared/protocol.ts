@@ -1,11 +1,14 @@
-export const CATEGORIES = ['bugs', 'ideas', 'feedback', 'misc'] as const;
+export const CATEGORIES = ['compliments', 'feedback', 'important', 'big_ideas', 'dad_jokes', 'art', 'spam'] as const;
 export type Category = typeof CATEGORIES[number];
 export type Destination = Category | 'trash';
 export const BIN_META: Record<Category, { label: string; description: string }> = {
-  bugs: { label: 'Bugs', description: 'Things that need fixing.' },
-  ideas: { label: 'Ideas', description: 'Small sparks. Big possibilities.' },
+  compliments: { label: 'Compliments', description: 'Kind words and little pick-me-ups.' },
   feedback: { label: 'Feedback', description: 'What’s working and what could be better.' },
-  misc: { label: 'Misc', description: 'A home for everything else.' },
+  important: { label: 'Important', description: 'Jev gives these special attention.' },
+  big_ideas: { label: 'Big Ideas', description: 'Small sparks. Big possibilities.' },
+  dad_jokes: { label: 'Dad Jokes', description: 'Puns, groaners, and very proud punchlines.' },
+  art: { label: 'Art', description: 'A little room for creativity.' },
+  spam: { label: 'Spam', description: 'Junk mail has a home here, too.' },
 };
 export interface PublicMessage {
   id: string;

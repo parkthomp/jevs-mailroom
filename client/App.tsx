@@ -141,7 +141,7 @@ function useDialog(panel: RefObject<HTMLElement | null>, first: RefObject<HTMLEl
 function Receipt({ receipt, openBin }: { receipt: SavedReceipt; openBin: (category: Category, id?: string) => void }) {
   const progress = receipt.progress;
   const status = progress?.status || receipt.status;
-  const category = progress?.category;
+  const category = isCategory(progress?.category) ? progress.category : undefined;
   const discarded = status === 'discarded', done = status === 'delivered';
   const labels: Record<string, string> = { pending_review: 'Checking your message', classifying: 'Jev is reading your note', ready: 'Your envelope is in line', ready_to_discard: 'Your envelope is in line', delivering: 'On its way to a bin', discarding: 'Jev is taking out the trash', delivered: category ? `Filed in ${BIN_META[category].label}` : 'Your note has been filed', discarded: 'Jev discarded your message', failed: 'Jev will try your note again' };
   return <div className={`receipt ${done ? 'receipt-done' : ''}`} aria-live="polite">
@@ -351,7 +351,7 @@ export default function App() {
   const reacted = useRef(new Set<string>());
   const ownIds = receipts.map(receipt => receipt.id);
   const latest = receipts[0], latestStatus = latest?.progress?.status || latest?.status;
-  const beacon = latest && latestStatus === 'delivered' && !latest.seen && latest.progress?.category ? latest.progress.category : null;
+  const beacon = latest && latestStatus === 'delivered' && !latest.seen && isCategory(latest.progress?.category) ? latest.progress.category : null;
   // The receipt stays up while your note is on its way, then tucks itself away a few seconds after it
   // lands. One already finished on an earlier visit starts hidden.
   const [receiptHidden, setReceiptHidden] = useState(() => { const first = readReceipts()[0]; return !!first && terminal.has(first.progress?.status || first.status); });
@@ -361,6 +361,18 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [latest?.id, latestStatus]);
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts.slice(0, 8))); } catch { /* In private storage modes the current session still works. */ } }, [receipts]);
+  // Previously delivered notes can move during an archive re-sort. Refresh saved receipts once
+  // on entry, including terminal ones; their original tokens still authorize the current result.
+  useEffect(() => {
+    let stopped = false;
+    void Promise.all(readReceipts().map(async receipt => {
+      try {
+        const progress = await request<SubmissionProgress>(`/api/submissions/${encodeURIComponent(receipt.id)}`, { headers: { 'x-receipt-token': receipt.token } });
+        if (!stopped) setReceipts(current => current.map(item => item.id === receipt.id ? { ...item, progress } : item));
+      } catch { /* Keep the saved receipt if the connection is temporarily unavailable. */ }
+    }));
+    return () => { stopped = true; };
+  }, []);
   useEffect(() => {
     let stopped = false;
     const pending = receipts.filter(receipt => !terminal.has(receipt.progress?.status || receipt.status));

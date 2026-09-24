@@ -7,8 +7,10 @@ import type { State } from './store.js';
 const RUN = .15, WALK = .045;
 const DROP_MS = { bin: 350, trash: 700 };
 const ANNOUNCE: Record<Destination, string> = {
-  bugs: 'FILING THIS BUG!', ideas: 'FILING THIS IDEA!', feedback: 'FILING THIS FEEDBACK!',
-  misc: 'FILING THIS UNDER MISC!', trash: 'ANOTHER ONE FOR THE BIN!',
+  compliments: 'KIND WORDS COMING THROUGH!', feedback: 'FILING THIS FEEDBACK!',
+  important: 'IMPORTANT DELIVERY!', big_ideas: 'FILING THIS BIG IDEA!',
+  dad_jokes: 'THIS ONE IS A GROANER!', art: 'ART FOR THE COLLECTION!',
+  spam: 'JUNK MAIL HAS A HOME!', trash: 'ANOTHER ONE FOR THE BIN!',
 };
 const INCOMING = ['pending_review', 'classifying', 'ready', 'ready_to_discard'];
 
@@ -36,7 +38,7 @@ export function planJev(state: State, now: number, random = Math.random): boolea
     const active = state.active, message = state.messages.find(item => item.id === active.id);
     if (active.endsAt <= now && message && ['delivering', 'discarding'].includes(message.status)) {
       message.status = active.destination === 'trash' ? 'discarded' : 'delivered';
-      message.deliveredAt = active.endsAt;
+      message.deliveredAt ??= active.endsAt;
     }
     if (active.endsAt > now) return finish();
     state.active = null;

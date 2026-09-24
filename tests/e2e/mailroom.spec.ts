@@ -39,14 +39,14 @@ test('two visitors watch a note get filed and can browse its durable bin history
     await enter(observer, 'Watcher');
     await expect(page.locator('.visitors')).toHaveText(/\d+ here/);
     await write(page, note);
-    await expect(page.getByText('Filed in Ideas', { exact: true })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Filed in Big Ideas', { exact: true })).toBeVisible({ timeout: 20000 });
     // Each visitor sees the other's character walking around.
     await expect(observer.locator('canvas')).toHaveAttribute('data-visitors', /^[1-9]/);
     await expect(observer.locator('canvas')).toHaveAttribute('data-names', /(^|,)ADA LOVELACE(,|$)/);
     await page.getByRole('button', { name: 'See your message' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
-    await browse(observer, 'Ideas');
+    await browse(observer, 'Big Ideas');
     await expect(observer.getByRole('dialog').getByText(note, { exact: true })).toBeVisible();
     // Everyone else sees who sent it.
     await expect(observer.getByRole('dialog').locator('article', { hasText: note }).getByText('FROM ADA LOVELACE', { exact: true })).toBeVisible();
@@ -81,7 +81,7 @@ test('screened-out envelope gets tossed without exposing its contents to visitor
   await expect(page.getByText('Jev discarded your message', { exact: true })).toBeVisible({ timeout: 20000 });
   expect(publicFrames.join('')).not.toContain(note);
   await expect(page.getByRole('textbox')).toHaveCount(0);
-  await browse(page, 'Misc');
+  await browse(page, 'Spam');
   await expect(page.getByRole('dialog').getByText(note, { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /correct|recategorize/i })).toHaveCount(0);
 });
@@ -95,7 +95,7 @@ test('mobile and reduced-motion visitors get a touch pad and can open every bin 
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.getByRole('button', { name: 'Use', exact: true })).toBeVisible();
-    for (const category of ['Bugs', 'Ideas', 'Feedback', 'Misc']) {
+    for (const category of ['Compliments', 'Feedback', 'Important', 'Big Ideas', 'Dad Jokes', 'Art', 'Spam']) {
       await browse(page, category);
       await expect(page.getByRole('dialog').getByRole('heading', { name: category, exact: true })).toBeVisible();
       const box = await page.getByRole('dialog').boundingBox();
@@ -160,12 +160,12 @@ test('visitors walk up to a bin to read it and to the incoming desk to write a n
   await expect(page.getByRole('button', { name: /Change name WALKER/ })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.visitors')).toHaveText(/\d+ here/);
-  // In through the door, round the left of Jev's desk, and up to the Ideas bin.
-  await walk(page, 'ArrowLeft', 'x <= 122');
+  // In through the door, round the left of Jev's desk, and up to the Big Ideas bin.
+  await walk(page, 'ArrowRight', 'x >= 165');
   await walk(page, 'ArrowUp', 'y <= 58');
-  await expect(page.getByRole('button', { name: 'Read Ideas' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Read Big Ideas' })).toBeVisible();
   await page.keyboard.press('Space');
-  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Ideas', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Big Ideas', exact: true })).toBeVisible();
   // Your character stays put while a window is open.
   const x = await page.locator('canvas').getAttribute('data-player-x');
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(300); await page.keyboard.up('ArrowRight');
@@ -181,4 +181,25 @@ test('visitors walk up to a bin to read it and to the incoming desk to write a n
   // Typing never walks your character around.
   await page.keyboard.type('asdw');
   await expect(page.getByRole('textbox', { name: 'Your message to Jev' })).toHaveValue('asdw');
+});
+
+
+test('returning visitors refresh receipts that still refer to an old bin', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jevs-mailroom-receipts-v1', JSON.stringify([{
+    id: 'old-note', token: 'saved-token', status: 'delivered',
+    progress: { id: 'old-note', status: 'delivered', category: 'ideas' },
+  }])));
+  let refreshed = false;
+  await page.route('**/api/submissions/old-note', async route => {
+    expect(route.request().headers()['x-receipt-token']).toBe('saved-token');
+    refreshed = true;
+    await route.fulfill({ json: { id: 'old-note', status: 'delivered', category: 'important' } });
+  });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await enter(page);
+  await expect.poll(() => refreshed).toBe(true);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('jevs-mailroom-receipts-v1')!)[0].progress.category)).toBe('important');
+  expect(errors).toEqual([]);
 });

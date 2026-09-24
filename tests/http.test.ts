@@ -86,11 +86,11 @@ test('HTTP + WebSockets share a durable room and never disclose a discarded mess
       const response = await fetch(`${base}/api/submissions/${trash.id}`, { headers: { 'x-receipt-token': trash.token } });
       return (await response.json()).status === 'discarded';
     });
-    await until(async () => views.every(records => records.some(room => room.counts.ideas === 1)));
+    await until(async () => views.every(records => records.some(room => room.counts.big_ideas === 1)));
     assert.doesNotMatch(JSON.stringify(views), /PRIVATE_HTTP_MESSAGE/);
     assert.equal((await fetch(`${base}/api/messages/${trash.id}`)).status, 404);
     assert.equal((await fetch(`${base}/api/bins/trash/messages`)).status, 404);
-    const page = await (await fetch(`${base}/api/bins/ideas/messages`)).json();
+    const page = await (await fetch(`${base}/api/bins/big_ideas/messages`)).json();
     assert.equal(page.total, 1);
     assert.equal(page.messages[0].text, 'Please add a sunny garden.');
     assert.equal(page.messages[0].name, 'ADA');
@@ -100,7 +100,7 @@ test('HTTP + WebSockets share a durable room and never disclose a discarded mess
     child = start();
     await until(async () => fetch(`${base}/healthz`).then(response => response.ok).catch(() => false));
     const recovered = await (await fetch(`${base}/api/room`)).json();
-    assert.equal(recovered.counts.ideas, 1);
+    assert.equal(recovered.counts.big_ideas, 1);
     assert.equal(recovered.active, null);
   } finally {
     sockets.forEach(socket => socket.terminate());
