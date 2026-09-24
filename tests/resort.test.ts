@@ -42,3 +42,22 @@ test('one-time resort queues the whole archive, including trash, and preserves i
   assert.equal(queueCategoryResort(restarted), 0);
   assert.deepEqual(restarted, JSON.parse(JSON.stringify(state)));
 });
+
+test('the trash re-check revisits revision 2 mail in bins and in flight, but leaves thrown-away mail alone', () => {
+  const messages: StoredMessage[] = statuses.map((status, i) => ({
+    id: String(i), submissionId: `submission-${i}`, tokenHash: `receipt-${i}`, name: 'ADA',
+    text: `saved text ${i}`, createdAt: 10, deliveredAt: 20, status,
+    decision: { destination: status === 'discarded' ? 'trash' : 'feedback', reaction: 'Old reaction' },
+    attempts: 1, nextAttemptAt: 0,
+  }));
+  const state: State = { version: 3, sortingRevision: 2, messages, active: null, jev: [], budget: { date: '', calls: 0 } };
+  const discarded = structuredClone(messages.find(message => message.status === 'discarded'));
+  assert.equal(queueCategoryResort(state), statuses.length - 1);
+  assert.equal(state.sortingRevision, 3);
+  for (const message of messages) {
+    if (message.id === discarded?.id) assert.deepEqual(message, discarded);
+    else { assert.equal(message.status, 'pending_review'); assert.equal(message.decision, undefined); }
+  }
+  assert.equal(snapshot(state, 0, 'live').recent.length, 0, 'binned mail is hidden until Jev checks it again');
+  assert.equal(queueCategoryResort(state), 0);
+});

@@ -68,7 +68,7 @@ test('negative feedback is published with one System One call and a pre-written 
   // The message travels only as state, never inside a question.
   assert.deepEqual(requests[0].body.state, { message: 'The page is painfully slow.' });
   assert.doesNotMatch(JSON.stringify(requests[0].body.questions), /painfully/);
-  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), CATEGORIES);
+  assert.deepEqual(Object.keys(requests[0].body.questions.category.criteria), [...CATEGORIES, 'trash']);
   assert.deepEqual(Object.keys(requests[0].body.questions.reaction_feedback.criteria), REACTIONS.feedback);
 });
 test('a likely hazard discards privately with the strongest reason', async () => {
@@ -88,7 +88,7 @@ test('an unknown reaction falls back to the bin’s standard line', async () => 
 test('malformed answers and invalid categories fail closed for worker retry', async () => {
   live(['not json']);
   await assert.rejects(decideMessage('hello'), /invalid decision/);
-  live([jev('trash', 'bad enum')]);
+  live([jev('bugs', 'bad enum')]);
   await assert.rejects(decideMessage('hello'), /invalid decision/);
   const missing = jev('big_ideas', REACTIONS.big_ideas[0]);
   delete (missing.answers as Record<string, unknown>).threats;
@@ -155,4 +155,14 @@ test('demo covers every new category and keeps ordinary urgency out of important
     ['Here is a poem', 'art'], ['A dad joke', 'dad_jokes'],
     ['test', 'spam'], ['URGENT: important feedback', 'feedback'],
   ]) assert.equal((await decideMessage(text)).destination, category);
+});
+
+test('Jev can pick trash instead of a bin, even for a Star Wars reference', async () => {
+  live([jev('trash', REACTIONS.feedback[0])]);
+  const result = await decideMessage('Unfit fixture below every hazard threshold');
+  assert.deepEqual(result, { destination: 'trash', reaction: 'This one goes in the trash.', reason: 'This message did not meet the public mailroom guidelines.' });
+  const starWars = jev('trash', REACTIONS.important[0]);
+  starWars.answers.star_wars.noul = 0.98;
+  live([starWars]);
+  assert.equal((await decideMessage('An unfit fixture with a Star Wars reference')).destination, 'trash');
 });
