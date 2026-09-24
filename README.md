@@ -63,6 +63,7 @@ This can use demo AI while `NODE_ENV` is not `production`, or real OpenRouter cr
 | `RECEIPT_SECRET` | Stable server secret, at least 32 characters in production |
 | `DATA_FILE` | `.data/state.json`; local development persistence |
 | `PORT` | `3001`; HTTP/WebSocket server (Vite proxies here in development) |
+| `PUBLIC_URL` | Optional site address for link previews, e.g. a custom domain; defaults to Render’s `RENDER_EXTERNAL_URL`, then the request’s host |
 | `MAX_QUEUE` | `40`; maximum waiting submissions |
 | `SUBMISSIONS_PER_MINUTE` | `5`; per-IP limit |
 | `AI_CONCURRENCY` | `2`; concurrent jobs |

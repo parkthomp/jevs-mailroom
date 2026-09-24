@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { CATEGORIES, type Category } from '../shared/protocol.js';
 import { aiMode } from './ai.js';
 import { startEngine } from './engine.js';
+import { siteOrigin, withSiteUrls } from './page.js';
 import { chatWithJev } from './jev.js';
 import { approveName, asPublic, binPage, HttpError, progress, snapshot, submit, validPass } from './room.js';
 import { Store } from './store.js';
@@ -92,11 +94,15 @@ app.get('/api/messages/:id', asyncRoute(async (req, res) => {
   res.json(message);
 }));
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Endpoint not found.')));
-app.use(express.static(resolve('dist/client')));
-app.use((req, res, next) => {
-  if (req.method !== 'GET') { next(new HttpError(404, 'Not found.')); return; }
-  res.sendFile(resolve('dist/client/index.html'), error => { if (error) next(new HttpError(404, 'Frontend not built yet. Run npm run dev or npm run build.')); });
-});
+// The page itself always goes through the fallback below, so its share tags get absolute URLs.
+app.use(express.static(resolve('dist/client'), { index: false }));
+let page: string | undefined;
+app.use(asyncRoute(async (req, res) => {
+  if (req.method !== 'GET') throw new HttpError(404, 'Not found.');
+  try { page ??= await readFile(resolve('dist/client/index.html'), 'utf8'); }
+  catch { throw new HttpError(404, 'Frontend not built yet. Run npm run dev or npm run build.'); }
+  res.type('html').send(withSiteUrls(page, siteOrigin(req)));
+}));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const status = error instanceof HttpError ? error.status : error instanceof SyntaxError ? 400 : (error as { status?: number })?.status === 413 ? 413 : 503;
   if (status === 429) res.setHeader('Retry-After', '60');
