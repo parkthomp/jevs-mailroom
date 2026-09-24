@@ -159,18 +159,15 @@ export default function RoomCanvas(props: Props) {
         label(BIN_META[key].label.toUpperCase(), BIN_X[key], 34, lit({ kind: 'bin', category: key }));
         rect(x + 2, 44, 34, 2, LIGHT);
       }
-      // Rug, desk, lamp, and paperwork.
+      // The rug stays in the open center of the room.
       rect(118, 80, 84, 36, DARK); rect(120, 82, 80, 32, LIGHT);
       for (let y = 82; y < 114; y += 3) { rect(116, y, 2, 1, DARK); rect(202, y, 2, 1, DARK); }
-      rect(134, 64, 52, 14, INK); rect(136, 66, 48, 6, LIGHT); rect(136, 72, 48, 4, DARK);
-      rect(137, 78, 3, 6, INK); rect(180, 78, 3, 6, INK);
-      rect(150, 67, 10, 4, PAPER); rect(152, 68, 6, 1, LIGHT); rect(170, 67, 5, 4, INK); rect(171, 68, 3, 2, PAPER);
-      rect(139, 57, 9, 3, DARK); rect(140, 57, 7, 1, LIGHT); rect(143, 60, 1, 6, INK);
-      // The incoming desk, where visitors leave notes, with the waiting envelopes stacked on top.
-      rect(20, 98, 50, 24, INK); rect(22, 100, 46, 5, LIGHT); rect(22, 105, 46, 15, DARK); rect(22, 105, 46, 1, INK);
-      rect(26, 108, 38, 9, PAPER); label('INCOMING', 45, 110, lit({ kind: 'incoming' }));
-      rect(22, 122, 4, 2, INK); rect(64, 122, 4, 2, INK);
-      tray.slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 26 + (i % 4) * 10, 96 - Math.floor(i / 4) * 4));
+      // The desk replaces the incoming trolley: lamp, paperwork, and waiting notes, without a sign.
+      rect(19, 98, 52, 14, INK); rect(21, 100, 48, 6, LIGHT); rect(21, 106, 48, 4, DARK);
+      rect(22, 112, 3, 6, INK); rect(65, 112, 3, 6, INK);
+      rect(35, 101, 10, 4, PAPER); rect(37, 102, 6, 1, LIGHT); rect(55, 101, 5, 4, INK); rect(56, 102, 3, 2, PAPER);
+      rect(24, 91, 9, 3, DARK); rect(25, 91, 7, 1, LIGHT); rect(28, 94, 1, 6, INK);
+      tray.slice(0, 8).forEach((item, i) => sprite(mine.includes(item.id) ? ENVELOPE_OWN : ENVELOPE, 35 + (i % 4) * 8, 97 - Math.floor(i / 4) * 4));
       // Trash can.
       rect(279, 96, 6, 2, INK); rect(272, 98, 20, 3, INK); rect(274, 101, 16, 20, INK); rect(276, 101, 12, 18, DARK);
       for (const x of [279, 283, 287]) rect(x - 1, 103, 1, 14, LIGHT);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nearby, step, toward } from '../client/player.js';
+import { clicked, nearby, step, toward } from '../client/player.js';
 import { Presence } from '../server/visitors.js';
 import { BIN_X, DOOR, walkable } from '../shared/walk.js';
 
@@ -8,25 +8,28 @@ test('visitors stay on the floor and walk around the furniture', () => {
   assert.ok(walkable(DOOR));
   assert.ok(!walkable([100, DOOR[1]]), 'only the doorway opens onto the bottom wall');
   assert.ok(!walkable([100, 40]), 'the bins sit against the wall');
-  assert.ok(!walkable([160, 70]), 'Jev’s desk is solid');
+  assert.ok(walkable([160, 70]), 'the old central desk location is open floor');
+  assert.ok(!walkable([45, 104]), 'the relocated desk is solid');
   // The lamp does not push the desk collision above the desktop.
-  let behind: [number, number] = [160, 50];
+  let behind: [number, number] = [45, 80];
   for (let i = 0; i < 100; i++) behind = step(behind, 0, 1, 1) as [number, number];
-  assert.deepEqual(behind, [160, 63]);
+  assert.deepEqual(behind, [45, 97]);
   // Walking straight up into the desk stops just below it...
-  let at: [number, number] = [160, 120];
+  let at: [number, number] = [45, 132];
   for (let i = 0; i < 100; i++) at = step(at, 0, -1, 1) as [number, number];
-  assert.deepEqual(at, [160, 87]);
+  assert.deepEqual(at, [45, 121]);
   // ...and pushing diagonally slides along its edge instead of sticking.
   const slid = step(at, -1, -1, 2);
-  assert.ok(slid[0] < 160 && slid[1] === 87);
-  assert.equal(toward([160, 120], [160, 70], 100), null, 'a clicked walk stops at furniture');
+  assert.ok(slid[0] < 45 && slid[1] === 121);
+  assert.equal(toward([45, 132], [45, 104], 100), null, 'a clicked walk stops at furniture');
   assert.deepEqual(toward([100, 120], [100, 60], 100), [100, 60]);
 });
 
 test('walking up to a bin, the incoming desk, or the trash offers to use it', () => {
   assert.deepEqual(nearby([BIN_X.ideas, 54])?.spot, { kind: 'bin', category: 'ideas' });
   assert.deepEqual(nearby([45, 132])?.spot, { kind: 'incoming' });
+  assert.deepEqual(clicked([45, 104])?.spot, { kind: 'incoming' });
+  assert.equal(clicked([160, 70]), null, 'the old desk no longer has a click target');
   assert.deepEqual(nearby([282, 132])?.spot, { kind: 'trash' });
   assert.equal(nearby([200, 136]), null, 'nothing to use in the open floor, even with Jev nearby');
 });

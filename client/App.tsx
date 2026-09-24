@@ -264,7 +264,7 @@ function MenuPanel({ room, touch, name, onClose, onCompose, onBin, onRename }: {
         <Sprite data={ARROW} size={2} className="menu-cursor" /><span>{BIN_META[category].label}</span><span className="menu-count">{room?.counts[category] || 0}</span>
       </button>)}</div>
       <button className="menu-item" onClick={onRename}><Sprite data={ARROW} size={2} className="menu-cursor" /><Sprite data={PERSON} size={3} /><span>Change name</span><span className="menu-count">{name}</span></button>
-      <p className="menu-help">{touch ? 'Walk with the pad, or tap anywhere to walk there. Press A next to a bin to read it, or at the INCOMING desk to write a note.' : 'Walk with the arrow keys or WASD, or click anywhere to walk there. Press Space next to a bin to read it, or at the INCOMING desk to write a note.'}</p>
+      <p className="menu-help">{touch ? 'Walk with the pad, or tap anywhere to walk there. Press A next to a bin to read it, or at the desk on the left to write a note.' : 'Walk with the arrow keys or WASD, or click anywhere to walk there. Press Space next to a bin to read it, or at the desk on the left to write a note.'}</p>
       {room?.mode === 'demo' && <p className="demo-notice"><span>DEMO MODE</span> Jev is using local sorting rules.</p>}
       <p className="menu-footer">{total} notes filed with care</p>
     </section>
@@ -337,7 +337,7 @@ export default function App() {
   // Your name tag. A first-timer gets Jev's welcome once they've said who they are.
   const named = useCallback((next: NamePass) => {
     try { localStorage.setItem(NAME_KEY, next.name); localStorage.setItem(PASS_KEY, next.pass); } catch { /* Private modes ask again next visit. */ }
-    if (!name) setTalk({ speaker: 'JEV', ends: 'walk', line: touch ? `Welcome in, ${next.name}! Walk with the pad and press A to use things. Read notes at the bins, or write one at the INCOMING desk.` : `Welcome in, ${next.name}! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the INCOMING desk.` });
+    if (!name) setTalk({ speaker: 'JEV', ends: 'walk', line: touch ? `Welcome in, ${next.name}! Walk with the pad and press A to use things. Read notes at the bins, or write one at the desk on the left.` : `Welcome in, ${next.name}! Walk with the arrow keys and press SPACE to use things. Read notes at the bins, or write one at the desk on the left.` });
     setIdentity(next); setOverlay(null);
   }, [name, touch]);
   // Your character only shows up for others with Jev's approval of its name tag.
@@ -397,7 +397,7 @@ export default function App() {
   const sent = useCallback((receipt: SubmissionReceipt) => {
     setReceipts(current => [receipt, ...current.filter(item => item.id !== receipt.id)].slice(0, 8));
     setOverlay(null);
-    setTalk({ speaker: null, line: 'You drop your note in the INCOMING tray. Jev’s on his way!' });
+    setTalk({ speaker: null, line: 'You leave your note on the desk. Jev’s on his way!' });
   }, []);
   const use = useCallback((spot: Spot | null) => {
     if (!spot) { setTalk(null); return; }

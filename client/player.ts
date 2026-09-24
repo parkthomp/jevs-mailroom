@@ -18,7 +18,7 @@ const inside = ([x, y]: Point, b: Box) => x >= b.left && x <= b.right && y >= b.
 export const PLACES: Place[] = [
   ...CATEGORIES.map(category => ({ spot: { kind: 'bin' as const, category }, zone: box(BIN_X[category] - 20, BIN_X[category] + 20, 0, 68),
     hit: box(BIN_X[category] - 20, BIN_X[category] + 20, 12, 48), approach: [BIN_X[category], 54] as Point })),
-  { spot: { kind: 'incoming' }, zone: box(6, 88, 84, 140), hit: box(18, 72, 86, 124), approach: [45, 132] },
+  { spot: { kind: 'incoming' }, zone: box(6, 88, 84, 140), hit: box(19, 71, 91, 118), approach: [45, 132] },
   { spot: { kind: 'trash' }, zone: box(254, 312, 84, 140), hit: box(270, 294, 90, 128), approach: [282, 132] },
 ];
 const distance = (a: Point, b: Point) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);

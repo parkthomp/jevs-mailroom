@@ -4,14 +4,12 @@ import type { Category, Destination, JevLeg, Point } from './protocol.js';
 // Shared so the server plans the same walks every visitor draws.
 export const ROOM_W = 320, ROOM_H = 160;
 export const BIN_X: Record<Category, number> = { bugs: 82, ideas: 136, feedback: 190, misc: 244 };
-export const DESK: Point = [160, 108], TRAY: Point = [80, 116], TRASH: Point = [262, 122];
+export const DESK: Point = [45, 132], TRAY: Point = [80, 116], TRASH: Point = [262, 122];
 const CORRIDOR = 56; // The strip of floor in front of the bins.
-const AISLES = [110, 212]; // Either side of the desk.
-// Furniture Jev goes around rather than through, padded by half his width: the desk, the incoming
-// trolley, and the trash can.
+const AISLES = [110, 212]; // Open lanes through the room.
+// Furniture Jev goes around rather than through, padded by half his width: the desk and trash can.
 export const BLOCKS = [
-  { left: 128, right: 192, top: 64, bottom: 86 },
-  { left: 16, right: 73, top: 96, bottom: 125 },
+  { left: 13, right: 77, top: 98, bottom: 120 },
   { left: 266, right: 298, top: 94, bottom: 123 },
 ];
 // Places Jev drifts between when there's nothing to sort.
