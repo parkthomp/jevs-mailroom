@@ -221,7 +221,7 @@ test('walking up to Jev and saying hi stops him for a chat everyone can see', as
   }
   await expect(prompt).toBeVisible();
   await talker.keyboard.press('Space');
-  const lines = ['ONLY A SITH DEALS IN ABSOLUTES', 'I HEAR PARKER IS A GREAT TEAM MEMBER', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP', 'HELLO THERE', 'RENDER IS MY HOME', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL'];
+  const lines = ['ONLY A SITH DEALS IN ABSOLUTES', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP', 'HELLO THERE', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL'];
   await expect.poll(() => canvas.getAttribute('data-jev-line')).toMatch(new RegExp(`^(${lines.join('|')})$`));
   const line = await canvas.getAttribute('data-jev-line');
   await expect.poll(() => observer.locator('canvas').getAttribute('data-jev-line')).toBe(line);

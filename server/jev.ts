@@ -101,8 +101,8 @@ export function planJev(state: State, now: number, random = Math.random): boolea
 
 export const CHAT_MS = 5000;
 export const CHAT_LINES = [
-  'ONLY A SITH DEALS IN ABSOLUTES', 'I HEAR PARKER IS A GREAT TEAM MEMBER', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP',
-  'HELLO THERE', 'RENDER IS MY HOME', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL',
+  'ONLY A SITH DEALS IN ABSOLUTES', "THIS IS NOT THE DROID YOU'RE LOOKING FOR", 'BEEP BOOP',
+  'HELLO THERE', 'I LOVE JSON', 'THIS COULD HAVE BEEN AN EMAIL',
 ];
 // Room for the visitor and Jev to have moved a little since the visitor's last reported position.
 const CHAT_SLACK = 16;
